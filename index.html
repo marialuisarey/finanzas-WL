@@ -684,9 +684,13 @@ function extractMacro(json){
    planilla. mindicador.cl permite CORS, por lo que funciona en el navegador. */
 async function fetchMacroMindicador(){
   const j = await fetchJson("https://mindicador.cl/api", 12000);
-  const mk = (nombre,key)=>{ const ind=j[key]; if(!ind||ind.valor==null)return null;
+  const mk = (nombre,ind)=>{ if(!ind||ind.valor==null)return null;
     return { indicador:nombre, valor:ind.valor, fechaDato:ind.fecha?String(ind.fecha).slice(0,10):"", actualizado:j.fecha||new Date().toISOString() }; };
-  const rows=[ mk("UF","uf"), mk("Dólar observado","dolar"), mk("Euro","euro"), mk("UTM","utm"), mk("IPC","ipc") ].filter(Boolean);
+  /* IPC: el /api general a veces trae un mes viejo; la serie dedicada tiene el
+     último publicado (serie[0] = más reciente). */
+  let ipcInd = j.ipc;
+  try{ const s=(await fetchJson("https://mindicador.cl/api/ipc",10000)).serie; if(s&&s.length) ipcInd=s[0]; }catch(e){}
+  const rows=[ mk("UF",j.uf), mk("Dólar observado",j.dolar), mk("Euro",j.euro), mk("UTM",j.utm), mk("IPC",ipcInd) ].filter(Boolean);
   return rows.length?rows:null;
 }
 
@@ -697,19 +701,15 @@ async function loadAll(){
     STATE.fondos = normalizeFondos(fondosJson);
     STATE.fondosMeta = { actualizado:fondosJson.actualizado||null, total:fondosJson.total!=null?fondosJson.total:STATE.fondos.length, hoja:fondosJson.hoja||"" };
 
-    /* Macro: mindicador.cl (Banco Central, siempre el último publicado) como
-       fuente primaria; si falla, la hoja Macro de la planilla; si no, respaldo local. */
+    /* Macro: la hoja Macro es la fuente principal (UF/dólar/euro/UTM desde
+       mindicador + IPC del Banco Central, todo escrito por el Apps Script).
+       Si la hoja no responde, se usa mindicador directo como respaldo. */
     STATE.macroOk=false; STATE.macro=[]; STATE.macroSource="";
-    try{
-      const mm = await fetchMacroMindicador();
-      if(mm && mm.length){ STATE.macro=mm; STATE.macroOk=true; STATE.macroSource="live"; }
-    }catch(e){}
-    if(!STATE.macroOk){
-      for(const url of MACRO_URL_CANDIDATES){
-        try{ const mj=await fetchJson(withBust(url), 12000); if(mj && mj.hoja && mj.hoja!=="Fondos"){ const m=extractMacro(mj); if(m&&m.length){ STATE.macro=m; STATE.macroOk=true; STATE.macroSource="live"; break; } } }
-        catch(e){}
-      }
+    for(const url of MACRO_URL_CANDIDATES){
+      try{ const mj=await fetchJson(withBust(url), 12000); if(mj && mj.hoja && mj.hoja!=="Fondos"){ const m=extractMacro(mj); if(m&&m.length){ STATE.macro=m; STATE.macroOk=true; STATE.macroSource="live"; break; } } }
+      catch(e){}
     }
+    if(!STATE.macroOk){ try{ const mm=await fetchMacroMindicador(); if(mm&&mm.length){ STATE.macro=mm; STATE.macroOk=true; STATE.macroSource="live"; } }catch(e){} }
     if(!STATE.macroOk){ STATE.macro=MACRO_FALLBACK; STATE.macroSource="fallback"; }
 
     STATE.loaded=true;
