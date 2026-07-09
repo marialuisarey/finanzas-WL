@@ -393,6 +393,13 @@ td.trunc:hover{overflow:visible;white-space:normal;}
     <div class="kpi-grid" id="kpiGrid"></div>
 
     <div class="section">
+      <div class="section-head">
+        <div><span class="eyebrow sec-eyebrow">Cartera propia</span><h2>Resumen de rentabilidad por posición</h2><div class="sub">Consolida tus fondos (FFMM), depósitos (DAP) y préstamos, ordenados por monto invertido. La barra muestra el capital; a la derecha, el interés que genera cada posición. Regístralos en sus pestañas y aparecen aquí.</div></div>
+      </div>
+      <div class="section-body" id="carteraResumen"></div>
+    </div>
+
+    <div class="section">
       <div class="section-head"><div><span class="eyebrow sec-eyebrow">Panorama</span><h2>Liquidez–Rentabilidad</h2><div class="sub">Mayor duration implica menor liquidez relativa.</div></div></div>
       <div class="section-body">
         <div class="scatter-wrap"><svg id="scatterSvg" width="100%" height="420" role="img" aria-label="Matriz Liquidez-Rentabilidad"></svg></div>
@@ -567,7 +574,7 @@ td.trunc:hover{overflow:visible;white-space:normal;}
 
 /* Endpoint Apps Script. La hoja Fondos se sirve en /exec (default) y la hoja
    Macro en /exec?hoja=Macro. Ambas se leen en vivo desde la planilla. */
-const BASE_URL = "https://script.google.com/macros/s/AKfycbxN95XU3oqsREl-cjSHP2VzxLU5PwLtob_CRTS6M6RafRBakN2Mf9OCyf1aScTcNemfHA/exec";
+const BASE_URL = "https://script.google.com/macros/s/AKfycbx8W6-otXZbuty4_KU3BB6qjuJrLVVL9C_qSIWezoLqNiPVFOfE7ADnlsh8tJ1gkmTFtQ/exec";
 const FONDOS_URL = BASE_URL;
 /* Variantes de la hoja Macro (la primera es la correcta según el Apps Script). */
 const MACRO_URL_CANDIDATES = [ BASE_URL + "?hoja=Macro", BASE_URL + "?sheet=Macro", BASE_URL + "?tipo=macro" ];
@@ -671,6 +678,18 @@ function extractMacro(json){
     return { indicador:g(["indicador"])??"", valor:g(["valor"]), fechaDato:g(["fecha dato","fechadato","fecha_dato","fecha"]), actualizado:g(["actualizado"]) }; });
 }
 
+/* Indicadores macro desde mindicador.cl (datos oficiales del Banco Central,
+   siempre el ÚLTIMO publicado). Es la fuente primaria de las tarjetas macro:
+   garantiza que UF, dólar, euro, UTM e IPC estén al día sin depender de la
+   planilla. mindicador.cl permite CORS, por lo que funciona en el navegador. */
+async function fetchMacroMindicador(){
+  const j = await fetchJson("https://mindicador.cl/api", 12000);
+  const mk = (nombre,key)=>{ const ind=j[key]; if(!ind||ind.valor==null)return null;
+    return { indicador:nombre, valor:ind.valor, fechaDato:ind.fecha?String(ind.fecha).slice(0,10):"", actualizado:j.fecha||new Date().toISOString() }; };
+  const rows=[ mk("UF","uf"), mk("Dólar observado","dolar"), mk("Euro","euro"), mk("UTM","utm"), mk("IPC","ipc") ].filter(Boolean);
+  return rows.length?rows:null;
+}
+
 async function loadAll(){
   setStatus("loading"); hideError();
   try{
@@ -678,11 +697,18 @@ async function loadAll(){
     STATE.fondos = normalizeFondos(fondosJson);
     STATE.fondosMeta = { actualizado:fondosJson.actualizado||null, total:fondosJson.total!=null?fondosJson.total:STATE.fondos.length, hoja:fondosJson.hoja||"" };
 
-    /* Intento de hoja Macro; si no, respaldo local. */
+    /* Macro: mindicador.cl (Banco Central, siempre el último publicado) como
+       fuente primaria; si falla, la hoja Macro de la planilla; si no, respaldo local. */
     STATE.macroOk=false; STATE.macro=[]; STATE.macroSource="";
-    for(const url of MACRO_URL_CANDIDATES){
-      try{ const mj=await fetchJson(withBust(url), 12000); if(mj && mj.hoja && mj.hoja!=="Fondos"){ const m=extractMacro(mj); if(m&&m.length){ STATE.macro=m; STATE.macroOk=true; STATE.macroSource="live"; break; } } }
-      catch(e){}
+    try{
+      const mm = await fetchMacroMindicador();
+      if(mm && mm.length){ STATE.macro=mm; STATE.macroOk=true; STATE.macroSource="live"; }
+    }catch(e){}
+    if(!STATE.macroOk){
+      for(const url of MACRO_URL_CANDIDATES){
+        try{ const mj=await fetchJson(withBust(url), 12000); if(mj && mj.hoja && mj.hoja!=="Fondos"){ const m=extractMacro(mj); if(m&&m.length){ STATE.macro=m; STATE.macroOk=true; STATE.macroSource="live"; break; } } }
+        catch(e){}
+      }
     }
     if(!STATE.macroOk){ STATE.macro=MACRO_FALLBACK; STATE.macroSource="fallback"; }
 
@@ -781,11 +807,16 @@ function renderFilters(agfs,clases,monedas,clasifs){
       <label class="fg-label">Duración (días)</label>
       <div class="range-row"><input type="number" id="fDurMin" placeholder="mín" value="${F.durMin??""}" aria-label="Duración mínima"><span style="color:#999">–</span><input type="number" id="fDurMax" placeholder="máx" value="${F.durMax??""}" aria-label="Duración máxima"></div>
       <label class="fg-label" style="margin-top:13px;">TAC máximo</label>
+      <div style="font-size:10.5px;color:var(--ink-subtle);font-family:var(--font-serif);font-style:italic;margin:-3px 0 6px;line-height:1.35">La TAC (Tasa Anual de Costos) es el costo total anual del fondo. Filtra fondos con costo mayor a este %.</div>
       <div class="input-unit"><input type="number" step="0.1" id="fTacMax" value="${F.tacMax??""}" aria-label="TAC máximo"><span class="unit">%</span></div>
       <label class="fg-label" style="margin-top:13px;">PatrimonioSerie mínimo</label>
       <div class="input-unit"><input type="number" id="fPatMin" value="${F.patMin??""}" aria-label="Patrimonio serie mínimo"><span class="unit">MM CLP</span></div>
       <label class="fg-label" style="margin-top:13px;">Búsqueda libre</label>
-      <input type="text" id="fSearch" placeholder="Fondo, AGF, Serie o RUN" value="${escAttr(F.search)}" aria-label="Búsqueda libre">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="fSearch" list="searchSug" placeholder="Fondo, AGF, Serie o RUN" value="${escAttr(F.search)}" aria-label="Búsqueda libre">
+        <button class="btn accent sm" id="btnSearch" type="button">Buscar</button>
+      </div>
+      <datalist id="searchSug">${[...new Set(STATE.fondos.flatMap(f=>[f.Fondo,f.AGF]).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),"es")).map(v=>`<option value="${escAttr(v)}"></option>`).join("")}</datalist>
     </div>`;
   document.querySelectorAll('#filtersBody input[type=checkbox]').forEach(cb=>cb.addEventListener("change",e=>{
     // "Todos": agrega o quita todos los valores del grupo.
@@ -807,6 +838,8 @@ function renderFilters(agfs,clases,monedas,clasifs){
   bind("fTacMax",e=>{F.tacMax=e.target.value===""?null:toNum(e.target.value);renderAll();});
   bind("fPatMin",e=>{F.patMin=e.target.value===""?null:toNum(e.target.value);renderAll();});
   bind("fSearch",e=>{F.search=e.target.value;renderAll();});
+  const btnS=document.getElementById("btnSearch");
+  if(btnS)btnS.addEventListener("click",()=>{ const el=document.getElementById("fSearch"); F.search=el?el.value:""; renderAll(); });
 }
 function tipoMatch(f){
   const F=STATE.filters; if(!F.tipo.size)return true;
@@ -1023,6 +1056,64 @@ function renderDashboard(filtered){
   ];
   document.getElementById("kpiGrid").innerHTML=kpis.map(k=>`<div class="kpi"><div class="k-label">${k.l}</div><div class="k-val num">${k.v}</div></div>`).join("");
   drawScatter(filtered); drawTramoDist(filtered); drawCreditQuality(filtered); drawAlerts(filtered);
+  renderCartera();
+}
+
+/* Resumen consolidado de la cartera propia: FFMM + DAP + Préstamos,
+   ordenados por monto, con el interés que genera cada posición. */
+function renderCartera(){
+  const el=document.getElementById("carteraResumen"); if(!el) return;
+  const TIPO_COLOR={ "FFMM":"#1F304A", "DAP":"#3F6B5E", "Préstamo":"#7C2E3C" };
+  const items=[];
+  try{ agruparPorFondo().forEach(g=>{ if(g.capitalNeto>0) items.push({tipo:"FFMM", label:g.fondo||g.agf||"Fondo", sub:g.agf||"", capital:g.capitalNeto, interes:g.interes||0, rent:g.rentEfect}); }); }catch(e){}
+  (STATE.daps||[]).forEach(d=>{ const m=dapMetrics(d); if(m.P>0) items.push({tipo:"DAP", label:d.banco||"Depósito a plazo", sub:(m.dias||0)+" días", capital:m.P, interes:m.interesTotal||0, rent:m.P>0?(m.interesTotal||0)/m.P:null}); });
+  (STATE.loans||[]).forEach(l=>{ const m=loanMetrics(l); if(m.P>0) items.push({tipo:"Préstamo", label:l.contraparte||"Préstamo", sub:(m.n||0)+" meses", capital:m.P, interes:m.totalInteres||0, rent:m.rentPeriodo}); });
+
+  if(!items.length){
+    el.innerHTML='<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0">Aún no registras posiciones. Agrega fondos en <strong>Inversiones actuales FFMM</strong>, depósitos en <strong>Inversiones DAP</strong> o préstamos en <strong>Préstamos a relacionadas</strong>, y aquí verás el resumen consolidado.</p>';
+    return;
+  }
+  items.sort((a,b)=>b.capital-a.capital);
+  const maxCap=Math.max(...items.map(i=>i.capital))||1;
+  const totalCap=items.reduce((a,i)=>a+i.capital,0);
+  const totalInt=items.reduce((a,i)=>a+i.interes,0);
+
+  const rows=items.map(i=>{
+    const w=(i.capital/maxCap*100).toFixed(2);
+    const c=TIPO_COLOR[i.tipo]||"#6E7E96";
+    const pctCartera=totalCap>0?(i.capital/totalCap*100):0;
+    return `<div style="display:grid;grid-template-columns:230px 1fr 150px;gap:14px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)">
+      <div style="min-width:0">
+        <div style="display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:2px;background:${c};flex:none"></span><span class="trunc" style="font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(i.label)}">${escHtml(i.label)}</span></div>
+        <div style="font-size:11px;color:var(--ink-subtle);margin-left:16px;font-family:var(--font-serif)">${escHtml(i.tipo)}${i.sub?" · "+escHtml(i.sub):""}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1;background:var(--surface-2);height:20px;border-radius:2px;overflow:hidden"><div style="height:100%;width:${w}%;background:${c}"></div></div>
+        <span class="num" style="font-size:12.5px;font-weight:600;white-space:nowrap">${fmtCLP(i.capital)}</span>
+      </div>
+      <div style="text-align:right">
+        <div class="num" style="font-size:12.5px;font-weight:600;color:#3F6B5E">${i.interes>0?"+"+fmtCLP(i.interes):DASH}</div>
+        <div style="font-size:10.5px;color:var(--ink-subtle)">${nf2.format(pctCartera)}% cartera${i.rent!=null?" · "+nf2.format(i.rent*100)+"% ref.":""}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  const tipos=["FFMM","DAP","Préstamo"];
+  const porTipo={}; items.forEach(i=>{ porTipo[i.tipo]=(porTipo[i.tipo]||0)+i.capital; });
+  const legend=tipos.filter(t=>porTipo[t]).map(t=>`<span class="li"><span class="sq" style="background:${TIPO_COLOR[t]}"></span>${t} — <strong>${fmtCLP(porTipo[t]||0)}</strong></span>`).join("");
+  const top=items[0];
+
+  el.innerHTML=
+    `<div style="display:grid;grid-template-columns:230px 1fr 150px;gap:14px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-muted);font-family:var(--font-label);padding-bottom:6px;border-bottom:1.5px solid var(--rule)"><span>Posición</span><span>Capital invertido</span><span style="text-align:right">Interés que genera</span></div>`+
+    rows+
+    `<div class="stacked-legend" style="margin-top:14px">${legend}</div>`+
+    `<div class="summary-grid" style="margin-top:16px">`+
+      `<div class="summary-cell"><div class="s-label">Capital total en cartera</div><div class="s-val num">${fmtCLP(totalCap)}</div></div>`+
+      `<div class="summary-cell"><div class="s-label">Interés total que genera</div><div class="s-val num">${fmtCLP(totalInt)}</div></div>`+
+      `<div class="summary-cell"><div class="s-label">N° de posiciones</div><div class="s-val num">${fmtInt(items.length)}</div></div>`+
+      `<div class="summary-cell"><div class="s-label">Mayor posición</div><div class="s-val" style="font-size:13px">${escHtml(top.label)}<div style="font-size:11px;color:var(--ink-subtle);font-family:var(--font-serif);font-weight:400">${fmtCLP(top.capital)} · ${nf2.format(totalCap>0?top.capital/totalCap*100:0)}%</div></div></div>`+
+    `</div>`+
+    `<p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">El interés es una estimación referencial (FFMM por Rent365d prorrateada, DAP por tasa al vencimiento, préstamos por su tabla de amortización). No descuenta comisiones ni impuestos.</p>`;
 }
 
 const CLASIF_PALETTE=["#5E7CA6","#7C93B4","#9AA7B8","#B06B78","#8C3E4C","#6E7E96","#A98E80","#88A0BC"];
@@ -1226,19 +1317,20 @@ async function guardarEnSheet(tipo){
     await fetch(BASE_URL, { method:"POST", mode:"no-cors", redirect:"follow",
       headers:{ "Content-Type":"text/plain;charset=utf-8" }, body:JSON.stringify(payload) });
   }catch(err){ console.error(err); setPersistMsg(tipo,"Error de conexión al guardar."); return false; }
-  /* Confirmar releyendo la hoja. */
-  try{
-    await new Promise(r=>setTimeout(r,900));
-    const url = withBust(BASE_URL + "?hoja=" + encodeURIComponent(P.hoja));
-    const j = await fetchJson(url, 15000);
-    const n = (j && j.hoja!=="Fondos" && Array.isArray(j.datos)) ? j.datos.filter(r=>Object.values(r).some(v=>v!=null&&v!=="")).length : 0;
-    if(filas.length>0 && n===0){
-      setPersistMsg(tipo,"No se guardó. Revisa que el Apps Script esté redesplegado como \"Versión nueva\" y con acceso \"Cualquiera\".");
-      return false;
-    }
-    setPersistMsg(tipo,"Guardado ✓ "+n+" registro"+(n===1?"":"s")+" en la planilla · "+nowHM());
-    return true;
-  }catch(e){ setPersistMsg(tipo,"Enviado, pero no pude confirmar la lectura. Revisa la planilla."); return true; }
+  /* Confirmar releyendo la hoja. El POST no-cors responde antes de que el
+     servidor termine de escribir, así que reintentamos la lectura varias veces. */
+  const target = filas.length;
+  for(let intento=1; intento<=4; intento++){
+    try{
+      await new Promise(r=>setTimeout(r, 800*intento));
+      const j = await fetchJson(BASE_URL + "?hoja=" + encodeURIComponent(P.hoja) + "&_t=" + Date.now(), 15000);
+      const n = (j && j.hoja!=="Fondos" && Array.isArray(j.datos)) ? j.datos.filter(r=>Object.values(r).some(v=>v!=null&&v!=="")).length : 0;
+      if(n>=target && target>0){ setPersistMsg(tipo,"Guardado ✓ "+n+" registro"+(n===1?"":"s")+" en la planilla · "+nowHM()); return true; }
+      if(target===0){ setPersistMsg(tipo,"Guardado ✓ (planilla vacía) · "+nowHM()); return true; }
+    }catch(e){ /* seguir reintentando */ }
+  }
+  setPersistMsg(tipo,"Enviado, pero la planilla aún no refleja los cambios. Reintenta en unos segundos; si persiste, revisa que el Apps Script esté desplegado como \"Versión nueva\" con acceso \"Cualquiera\".");
+  return false;
 }
 
 /* Carga un tipo desde su hoja. Silencioso si la hoja no existe aún. */
@@ -1307,7 +1399,7 @@ function renderInversiones(){
     tr.querySelector(".h-fecha").addEventListener("change",e=>{ h.fecha=e.target.value; renderByFund(); renderHoldSummary(); });
     tr.querySelector(".h-del").addEventListener("click",()=>removeHolding(id));
   });
-  renderByFund(); renderHoldSummary();
+  renderByFund(); renderHoldSummary(); renderCartera();
 }
 
 /* Agrupa los movimientos por fondo (agf|fondo|serie) y calcula capital neto,
@@ -1389,7 +1481,7 @@ function renderHoldSummary(){
     {l:"Capital neto vigente",v:fmtCLP(capitalNeto)},
     {l:"N° de fondos",v:fmtInt(groups.length)},
     {l:"Interés ganado este año",v:fmtCLP(interesYTD)},
-    {l:"Interés ganado este mes",v:fmtCLP(interesMes)},
+    {l:"Interés ganado en "+mesActualNombre(),v:fmtCLP(interesMes)},
     {l:"Interés ganado total ref.",v:fmtCLP(interesTotal)},
     {l:"Rentab. total efectiva ref.",v:rentEfectTotal===null?DASH:nf2.format(rentEfectTotal*100)+"%"},
     {l:"Rent365d ponderada",v:fmtPct(rentW)},
@@ -1645,7 +1737,7 @@ function renderPrestamos(){
     tr.querySelector(".l-amort").addEventListener("click",()=>{ STATE.loanExpanded[id]=!STATE.loanExpanded[id]; renderPrestamos(); });
     tr.querySelector(".l-del").addEventListener("click",()=>removeLoan(id));
   });
-  renderLoanSummary();
+  renderLoanSummary(); renderCartera();
 }
 /* Recalcula sin perder el foco del input que se está editando. */
 function refreshLoanRow(id){
@@ -1661,18 +1753,36 @@ function refreshLoanRow(id){
   if(STATE.loanExpanded[id]) renderPrestamos();
 }
 
+/* Nombre del mes actual (ej. "julio") para las etiquetas de interés mensual. */
+function mesActualNombre(){ return MESES[new Date().getMonth()]; }
+/* Suma meses a una fecha (para fechas de pago de un préstamo). */
+function addMeses(date,n){ const d=new Date(date); d.setMonth(d.getMonth()+n); return d; }
+/* Interés de un préstamo cuyas cuotas caen dentro del rango [fromTime,toTime).
+   Cada cuota k se paga en fecha_inicio + k meses; se suma su componente de interés. */
+function loanInteresRango(loan,fromTime,toTime){
+  const a=amortizacion(loan), ini=parseISOd(loan.fecha); if(!ini)return 0;
+  let s=0; a.filas.forEach(f=>{ const t=addMeses(ini,f.k).getTime(); if(t>=fromTime&&t<toTime) s+=f.interes; });
+  return s;
+}
+
 function renderLoanSummary(){
   const el=document.getElementById("loanSummary"); if(!el)return;
   const valid=STATE.loans.filter(l=>(toNum(l.monto)||0)>0);
   const totalPrestado=valid.reduce((a,l)=>a+(toNum(l.monto)||0),0);
-  let interesTotal=0; const tasaPairs=[], plazoPairs=[];
+  let interesTotal=0, interesMes=0, interesYTD=0; const tasaPairs=[], plazoPairs=[];
+  const now=new Date(), year=now.getFullYear(), month=now.getMonth();
+  const m0=new Date(year,month,1).getTime(), m1=new Date(year,month+1,1).getTime();
+  const y0=new Date(year,0,1).getTime(), y1=new Date(year+1,0,1).getTime();
   valid.forEach(l=>{ const m=loanMetrics(l); interesTotal+=m.totalInteres;
+    interesMes+=loanInteresRango(l,m0,m1); interesYTD+=loanInteresRango(l,y0,y1);
     tasaPairs.push([m.tasaAnual,m.P]); plazoPairs.push([m.n,m.P]); });
   const tasaW=weightedAvg(tasaPairs), plazoW=weightedAvg(plazoPairs);
   const rentTotalPeriodo = totalPrestado>0 ? interesTotal/totalPrestado : null;
   const cells=[
     {l:"Total prestado",v:fmtCLP(totalPrestado)},
     {l:"N° de préstamos",v:fmtInt(valid.length)},
+    {l:"Interés ganado en "+mesActualNombre(),v:fmtCLP(interesMes)},
+    {l:"Interés ganado este año",v:fmtCLP(interesYTD)},
     {l:"Interés total a generar",v:fmtCLP(interesTotal)},
     {l:"Total a recibir (capital + interés)",v:fmtCLP(totalPrestado+interesTotal)},
     {l:"Tasa anual promedio ponderada",v:tasaW===null?DASH:nf2.format(tasaW)+"%"},
@@ -1759,7 +1869,7 @@ function renderDap(){
     tr.querySelector(".d-tasa").addEventListener("input",e=>{ d.tasa=e.target.value===""?0:toNum(e.target.value)||0; refreshDapRow(id); });
     tr.querySelector(".d-del").addEventListener("click",()=>removeDap(id));
   });
-  renderDapKpis(); renderDapMonth();
+  renderDapKpis(); renderDapMonth(); renderCartera();
 }
 function refreshDapRow(id){
   const tr=document.querySelector(`#dapBody tr[data-id="${id}"]`); if(!tr)return;
@@ -1787,7 +1897,7 @@ function renderDapKpis(){
     {l:"N° de DAP registrados",v:fmtInt(valid.length)},
     {l:"Capital vigente hoy",v:fmtCLP(vigente)},
     {l:"Interés ganado este año",v:fmtCLP(interesYTD)},
-    {l:"Interés ganado este mes",v:fmtCLP(interesMes)},
+    {l:"Interés ganado en "+mesActualNombre(),v:fmtCLP(interesMes)},
     {l:"Interés total proyectado",v:fmtCLP(interesTotalProy)},
     {l:"Tasa anual promedio ponderada",v:tasaW===null?DASH:nf2.format(tasaW)+"%"}
   ];
