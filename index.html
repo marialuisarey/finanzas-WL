@@ -451,11 +451,10 @@ td.trunc:hover{overflow:visible;white-space:normal;}
         <div>
           <span class="eyebrow sec-eyebrow">Cartera vigente</span>
           <h2>Inversiones actuales</h2>
-          <div class="sub">Registra los movimientos de la cartera: inversiones (aportes) y retiros, indicando banco/AGF, fondo, serie, monto y fecha. El interés ganado se estima con la Rent365d histórica de cada fondo prorrateada por los días transcurridos (referencial).</div>
+          <div class="sub">Registro <strong>mensual por fondo</strong>: por cada fondo y mes anota el saldo inicial, los aportes y retiros del mes, y el saldo final. La rentabilidad se calcula con esos saldos reales — no necesitas cargar cada movimiento del banco.</div>
         </div>
         <div class="table-actions">
-          <button class="btn accent sm" id="btnAddInv">Agregar inversión</button>
-          <button class="btn sm" id="btnAddRet" style="background:var(--burgundy);border-color:var(--burgundy)">Agregar retiro</button>
+          <button class="btn accent sm" id="btnAddInv">Agregar registro mensual</button>
           <button class="btn ghost sm" id="btnSaveInv">Guardar en planilla</button>
           <button class="btn ghost sm" id="btnLoadInv">Cargar guardados</button>
           <span class="persist-msg" id="persist-inversiones"></span>
@@ -465,12 +464,12 @@ td.trunc:hover{overflow:visible;white-space:normal;}
         <div class="table-scroll" style="max-height:none">
           <table class="data" id="holdTable"><thead id="holdHead"></thead><tbody id="holdBody"></tbody></table>
         </div>
-        <p style="font-size:11.5px;color:var(--ink-subtle);margin-top:10px;font-family:var(--font-serif);font-style:italic">El registro es de sesión: se pierde al recargar la página (la herramienta no almacena datos localmente). Los intereses son una estimación referencial, no el valor cuota efectivo.</p>
+        <p style="font-size:11.5px;color:var(--ink-subtle);margin-top:10px;font-family:var(--font-serif);font-style:italic">Consejo: no cargues cada línea de la cartola del banco. Registra un renglón por fondo y mes con los saldos y los flujos netos. Guarda en la planilla para no perder los datos al recargar.</p>
       </div>
     </div>
 
     <div class="section">
-      <div class="section-head"><div><span class="eyebrow sec-eyebrow">Resultados</span><h2>Interés ganado por fondo</h2><div class="sub">Capital neto vigente e interés referencial acumulado a la fecha de hoy, por fondo.</div></div></div>
+      <div class="section-head"><div><span class="eyebrow sec-eyebrow">Resultados</span><h2>Rentabilidad por fondo</h2><div class="sub">Saldo actual, ganancia del mes/año/total y rentabilidad acumulada, calculados con tus saldos reales.</div></div></div>
       <div class="section-body">
         <div class="table-scroll" style="max-height:none"><table class="data" id="byFundTable"><thead id="byFundHead"></thead><tbody id="byFundBody"></tbody></table></div>
       </div>
@@ -1247,7 +1246,7 @@ function exportCsv(){
    estima de forma referencial con la Rent365d histórica del fondo
    prorrateada por los días transcurridos hasta hoy.
    ============================================================ */
-const HOLD_COLS=["Tipo","Banco / AGF","Fondo","Serie","Monto (CLP)","Valor cuota","Fecha","Nivel de riesgo","Rent365d",""];
+const HOLD_COLS=["Banco / AGF","Fondo","Serie","Mes","Saldo inicial","Aportes","Retiros","Saldo final","V. cuota inicio","V. cuota fin","V. cuota retiro","Ganancia","Rentab. %",""];
 
 function agfList(){ return distinct("AGF"); }
 function fondosDeAgf(agf){ return [...new Set(STATE.fondos.filter(f=>f.AGF===agf).map(f=>f.Fondo))].sort((a,b)=>String(a).localeCompare(String(b),"es")); }
@@ -1274,9 +1273,9 @@ function hoyISO(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return d.g
 const PERSIST = {
   inversiones: {
     hoja: "Inversiones",
-    fields: ["tipo","agf","fondo","serie","monto","valorCuota","fecha"],
-    toRow: h => ({ tipo:h.tipo, agf:h.agf, fondo:h.fondo, serie:h.serie, monto:h.monto, valorCuota:h.valorCuota, fecha:h.fecha }),
-    fromRow: r => ({ id:++STATE.holdSeq, tipo:(/retiro/i.test(String(r.tipo||""))?"retiro":"inversion"), agf:r.agf||"", fondo:r.fondo||"", serie:r.serie!=null?String(r.serie):"", monto:toNum(r.monto)||0, valorCuota:r.valorCuota!=null?r.valorCuota:"", fecha:normFechaISO(r.fecha) }),
+    fields: ["agf","fondo","serie","mes","saldoIni","aportes","retiros","saldoFin","cuotaIni","cuotaFin","cuotaRet"],
+    toRow: h => ({ agf:h.agf, fondo:h.fondo, serie:h.serie, mes:h.mes, saldoIni:h.saldoIni, aportes:h.aportes, retiros:h.retiros, saldoFin:h.saldoFin, cuotaIni:h.cuotaIni, cuotaFin:h.cuotaFin, cuotaRet:h.cuotaRet }),
+    fromRow: r => ({ id:++STATE.holdSeq, agf:r.agf||"", fondo:r.fondo||"", serie:r.serie!=null?String(r.serie):"", mes:normMes(r.mes), saldoIni:toNum(r.saldoIni)||0, aportes:toNum(r.aportes)||0, retiros:toNum(r.retiros)||0, saldoFin:toNum(r.saldoFin)||0, cuotaIni:r.cuotaIni!=null?r.cuotaIni:"", cuotaFin:r.cuotaFin!=null?r.cuotaFin:"", cuotaRet:r.cuotaRet!=null?r.cuotaRet:"" }),
     target: rows => { STATE.holdings = rows; },
     render: () => renderInversiones()
   },
@@ -1357,148 +1356,158 @@ async function cargarGuardados(){
   await Promise.all([ cargarDeSheet("inversiones",true), cargarDeSheet("dap",true), cargarDeSheet("prestamos",true) ]);
 }
 
-function addMov(tipo){ STATE.holdings.push({id:++STATE.holdSeq,tipo:tipo,agf:"",fondo:"",serie:"",monto:0,valorCuota:"",fecha:hoyISO()}); renderInversiones(); }
+/* Registro MENSUAL por fondo: una fila = un fondo en un mes, con saldo
+   inicial, aportes, retiros y saldo final. La rentabilidad sale de esos
+   saldos reales (no de la Rent365d histórica). */
+function mesActualISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+function normMes(v){ if(v==null||v==="")return ""; const s=String(v); let m=s.match(/^(\d{4})-(\d{2})/); if(m)return m[1]+"-"+m[2]; const d=new Date(s); if(!isNaN(d))return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); return ""; }
+function addMov(){ STATE.holdings.push({id:++STATE.holdSeq,agf:"",fondo:"",serie:"",mes:mesActualISO(),saldoIni:0,aportes:0,retiros:0,saldoFin:0,cuotaIni:"",cuotaFin:"",cuotaRet:""}); renderInversiones(); }
 function removeHolding(id){ STATE.holdings=STATE.holdings.filter(h=>h.id!==id); renderInversiones(); }
 function clearHoldings(){ STATE.holdings=[]; renderInversiones(); }
+/* Cálculo por registro mensual (método Dietz: flujos al medio del mes). */
+function recCalc(h){ const si=+h.saldoIni||0,ap=+h.aportes||0,re=+h.retiros||0,sf=+h.saldoFin||0;
+  const ganancia=sf-si-ap+re, denom=si+0.5*ap-0.5*re; return {si,ap,re,sf,ganancia,rent:denom>0?ganancia/denom:null}; }
 
 function renderInversiones(){
   const head=document.getElementById("holdHead"), body=document.getElementById("holdBody");
   if(!head)return;
-  head.innerHTML="<tr>"+HOLD_COLS.map((h,i)=>`<th class="${i===4||i===5||i===8?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
+  head.innerHTML="<tr>"+HOLD_COLS.map((h,i)=>`<th class="${i>=4&&i<=12?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
   if(!STATE.loaded){ body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Los datos de fondos aún no están disponibles.</td></tr>`; return; }
-  if(!STATE.holdings.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Aún no hay movimientos. Usa "Agregar inversión" o "Agregar retiro" para empezar.</td></tr>`; renderByFund(); renderHoldSummary(); return; }
+  if(!STATE.holdings.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Aún no hay registros. Usa "Agregar registro mensual" para empezar.</td></tr>`; renderByFund(); renderHoldSummary(); renderCartera(); return; }
 
   const opt=(v,sel)=>`<option value="${escAttr(v)}" ${String(sel)===String(v)?"selected":""}>${escHtml(v)}</option>`;
+  const gColor=v=>v>=0?"#2F6B4F":"var(--burgundy)";
   body.innerHTML=STATE.holdings.map(h=>{
-    const f=matchFondo(h), rk=f?riskLevel(f):null;
     const agfOpts=`<option value="">— Banco / AGF —</option>`+agfList().map(a=>opt(a,h.agf)).join("");
     const fondoOpts=h.agf?(`<option value="">— Fondo —</option>`+fondosDeAgf(h.agf).map(x=>opt(x,h.fondo)).join("")):`<option value="">Elige banco primero</option>`;
     const serieOpts=(h.agf&&h.fondo)?(`<option value="">— Serie —</option>`+seriesDeFondo(h.agf,h.fondo).map(x=>opt(x,h.serie)).join("")):`<option value="">Elige fondo primero</option>`;
-    const tipoOpts=opt("inversion",h.tipo).replace(">inversion<",">Inversión<")+opt("retiro",h.tipo).replace(">retiro<",">Retiro<");
-    const tipoTag=h.tipo==="retiro"?`<span class="tramo-tag" style="background:var(--burgundy);color:var(--cream);border-color:var(--burgundy)">Retiro</span>`:`<span class="tramo-tag t1">Inversión</span>`;
+    const c=recCalc(h);
+    const gCol=c.ganancia===0?DASH:`<span style="color:${gColor(c.ganancia)}">${(c.ganancia>=0?"+":"")+fmtCLP(c.ganancia)}</span>`;
+    const rCol=c.rent===null?DASH:`<span style="color:${gColor(c.rent)}">${nf2.format(c.rent*100)}%</span>`;
     return `<tr data-id="${h.id}">
-      <td><select class="h-tipo" style="min-width:110px" aria-label="Tipo de movimiento"><option value="inversion" ${h.tipo!=="retiro"?"selected":""}>Inversión</option><option value="retiro" ${h.tipo==="retiro"?"selected":""}>Retiro</option></select></td>
-      <td><select class="h-agf" style="min-width:150px" aria-label="Banco o AGF">${agfOpts}</select></td>
-      <td class="trunc" style="max-width:300px"><select class="h-fondo" style="min-width:220px;max-width:340px" aria-label="Fondo">${fondoOpts}</select></td>
-      <td><select class="h-serie" style="min-width:80px" aria-label="Serie">${serieOpts}</select></td>
-      <td class="right"><input type="text" inputmode="numeric" class="h-monto num" style="width:130px;text-align:right" placeholder="$0" value="${h.monto?nfInt.format(h.monto):""}" aria-label="Monto"></td>
-      <td class="right"><input type="number" step="0.0001" class="h-cuota num" style="width:104px;text-align:right" placeholder="opcional" value="${h.valorCuota!=null&&h.valorCuota!==""?h.valorCuota:""}" aria-label="Valor cuota del día"></td>
-      <td><input type="date" class="h-fecha" style="width:150px" value="${h.fecha||""}" aria-label="Fecha del movimiento"></td>
-      <td>${rk?`<span class="risk-badge" style="background:${rk.color}">${rk.label}</span>`:DASH}</td>
-      <td class="right num">${f?fmtPct(f.Rent365d):DASH}</td>
+      <td><select class="h-agf" style="min-width:140px" aria-label="Banco o AGF">${agfOpts}</select></td>
+      <td class="trunc" style="max-width:280px"><select class="h-fondo" style="min-width:200px;max-width:320px" aria-label="Fondo">${fondoOpts}</select></td>
+      <td><select class="h-serie" style="min-width:76px" aria-label="Serie">${serieOpts}</select></td>
+      <td><input type="month" class="h-mes" style="width:130px" value="${h.mes||""}" aria-label="Mes"></td>
+      <td class="right"><input type="text" inputmode="numeric" class="h-si num" style="width:118px;text-align:right" placeholder="$0" value="${h.saldoIni?nfInt.format(h.saldoIni):""}" aria-label="Saldo inicial"></td>
+      <td class="right"><input type="text" inputmode="numeric" class="h-ap num" style="width:108px;text-align:right" placeholder="$0" value="${h.aportes?nfInt.format(h.aportes):""}" aria-label="Aportes del mes"></td>
+      <td class="right"><input type="text" inputmode="numeric" class="h-re num" style="width:108px;text-align:right" placeholder="$0" value="${h.retiros?nfInt.format(h.retiros):""}" aria-label="Retiros del mes"></td>
+      <td class="right"><input type="text" inputmode="numeric" class="h-sf num" style="width:118px;text-align:right" placeholder="$0" value="${h.saldoFin?nfInt.format(h.saldoFin):""}" aria-label="Saldo final"></td>
+      <td class="right"><input type="text" class="h-cuotaI num" style="width:86px;text-align:right" placeholder="—" value="${h.cuotaIni!=null?String(h.cuotaIni):""}" aria-label="Valor cuota inicio de mes"></td>
+      <td class="right"><input type="text" class="h-cuotaF num" style="width:86px;text-align:right" placeholder="—" value="${h.cuotaFin!=null?String(h.cuotaFin):""}" aria-label="Valor cuota fin de mes"></td>
+      <td class="right"><input type="text" class="h-cuotaR num" style="width:86px;text-align:right" placeholder="—" value="${h.cuotaRet!=null?String(h.cuotaRet):""}" aria-label="Valor cuota al retiro"></td>
+      <td class="right num">${gCol}</td>
+      <td class="right num" style="font-weight:600">${rCol}</td>
       <td><button class="btn ghost sm h-del" type="button" aria-label="Eliminar">Quitar</button></td>
     </tr>`;
   }).join("");
 
   body.querySelectorAll("tr[data-id]").forEach(tr=>{
     const id=+tr.dataset.id, h=STATE.holdings.find(x=>x.id===id);
-    tr.querySelector(".h-tipo").addEventListener("change",e=>{ h.tipo=e.target.value; renderByFund(); renderHoldSummary(); });
     tr.querySelector(".h-agf").addEventListener("change",e=>{ h.agf=e.target.value; h.fondo=""; h.serie=""; renderInversiones(); });
     tr.querySelector(".h-fondo").addEventListener("change",e=>{ h.fondo=e.target.value; h.serie=""; renderInversiones(); });
-    tr.querySelector(".h-serie").addEventListener("change",e=>{ h.serie=e.target.value; renderInversiones(); });
-    const monto=tr.querySelector(".h-monto");
-    monto.addEventListener("input",e=>{ h.monto=parseMiles(e.target.value); e.target.value=h.monto?nfInt.format(h.monto):""; renderByFund(); renderHoldSummary(); });
-    tr.querySelector(".h-cuota").addEventListener("input",e=>{ h.valorCuota=e.target.value; });
-    tr.querySelector(".h-fecha").addEventListener("change",e=>{ h.fecha=e.target.value; renderByFund(); renderHoldSummary(); });
+    tr.querySelector(".h-serie").addEventListener("change",e=>{ h.serie=e.target.value; recalcRow(id); });
+    tr.querySelector(".h-mes").addEventListener("change",e=>{ h.mes=e.target.value; recalcRow(id); });
+    const money=(sel,prop)=>{ const el=tr.querySelector(sel); el.addEventListener("input",ev=>{ h[prop]=parseMiles(ev.target.value); ev.target.value=h[prop]?nfInt.format(h[prop]):""; recalcRow(id); }); };
+    money(".h-si","saldoIni"); money(".h-ap","aportes"); money(".h-re","retiros"); money(".h-sf","saldoFin");
+    tr.querySelector(".h-cuotaI").addEventListener("input",e=>{ h.cuotaIni=e.target.value; });
+    tr.querySelector(".h-cuotaF").addEventListener("input",e=>{ h.cuotaFin=e.target.value; });
+    tr.querySelector(".h-cuotaR").addEventListener("input",e=>{ h.cuotaRet=e.target.value; });
     tr.querySelector(".h-del").addEventListener("click",()=>removeHolding(id));
   });
+  renderByFund(); renderHoldSummary(); renderCartera();
+}
+/* Recalcula solo las celdas de ganancia/rentabilidad de una fila sin perder el foco. */
+function recalcRow(id){
+  const tr=document.querySelector(`#holdBody tr[data-id="${id}"]`); if(!tr)return;
+  const h=STATE.holdings.find(x=>x.id===id), c=recCalc(h), cells=tr.querySelectorAll("td");
+  const gColor=v=>v>=0?"#2F6B4F":"var(--burgundy)";
+  cells[11].innerHTML=c.ganancia===0?DASH:`<span style="color:${gColor(c.ganancia)}">${(c.ganancia>=0?"+":"")+fmtCLP(c.ganancia)}</span>`;
+  cells[12].innerHTML=c.rent===null?DASH:`<span style="color:${gColor(c.rent)}">${nf2.format(c.rent*100)}%</span>`;
   renderByFund(); renderHoldSummary(); renderCartera();
 }
 
 /* Agrupa los movimientos por fondo (agf|fondo|serie) y calcula capital neto,
    interés referencial acumulado total, del año en curso y del mes en curso.
    El interés devenga linealmente desde la fecha de cada movimiento hasta hoy. */
+/* Agrupa los registros por fondo (agf|fondo|serie), encadena los meses y
+   calcula saldo actual, ganancia (mes/año/total) y rentabilidad acumulada. */
 function agruparPorFondo(){
-  const groups={};
-  const hoy=new Date(); hoy.setHours(0,0,0,0);
-  const year=hoy.getFullYear(), month=hoy.getMonth();
-  const y0=new Date(year,0,1).getTime();
-  const m0=new Date(year,month,1).getTime();
-  STATE.holdings.forEach(h=>{
-    const f=matchFondo(h); if(!f||!h.monto)return;
+  const g={};
+  STATE.holdings.forEach(h=>{ if(!(h.fondo||h.agf))return;
     const key=h.agf+"|"+h.fondo+"|"+h.serie;
-    if(!groups[key]) groups[key]={f,agf:h.agf,fondo:h.fondo,serie:h.serie,aportes:0,retiros:0,interes:0,interesYTD:0,interesMes:0,pesoDias:0,pesoMonto:0};
-    const g=groups[key];
-    const signo=h.tipo==="retiro"?-1:1;
-    const rent=toNum(f.Rent365d)||0, dias=diasHastaHoy(h.fecha);
-    const ini=parseISOd(h.fecha);
-    const perDia = signo*h.monto*(rent/365);   // interés diario con signo
-    if(signo>0) g.aportes+=h.monto; else g.retiros+=h.monto;
-    g.interes += perDia*dias;
-    if(ini){
-      const s=ini.getTime();
-      g.interesYTD += perDia*overlapDias(s,hoy.getTime(),y0,hoy.getTime());
-      g.interesMes += perDia*overlapDias(s,hoy.getTime(),m0,hoy.getTime());
-    }
-    g.pesoDias += h.monto*dias; g.pesoMonto += h.monto;
+    if(!g[key]) g[key]={agf:h.agf,fondo:h.fondo,serie:h.serie,f:matchFondo(h),meses:[]};
+    g[key].meses.push(h);
   });
-  return Object.values(groups).map(g=>{
-    g.capitalNeto=g.aportes-g.retiros;
-    g.rent=toNum(g.f.Rent365d);
-    g.diasProm=g.pesoMonto>0?g.pesoDias/g.pesoMonto:0;
-    g.rentEfect = g.capitalNeto>0 ? (g.interes/g.capitalNeto) : (g.aportes>0?g.interes/g.aportes:null);
-    return g;
+  const curMes=mesActualISO(), curYear=String(new Date().getFullYear());
+  return Object.values(g).map(x=>{
+    x.meses.sort((a,b)=>String(a.mes||"").localeCompare(String(b.mes||"")));
+    let gTotal=0,gAno=0,gMes=0,ap=0,re=0,acum=1,acumYear=1,tieneRent=false;
+    x.meses.forEach(h=>{ const c=recCalc(h); gTotal+=c.ganancia; ap+=c.ap; re+=c.re;
+      if(String(h.mes)===curMes) gMes+=c.ganancia;
+      if(String(h.mes||"").slice(0,4)===curYear){ gAno+=c.ganancia; if(c.rent!=null) acumYear*=(1+c.rent); }
+      if(c.rent!=null){ acum*=(1+c.rent); tieneRent=true; }
+    });
+    const last=x.meses[x.meses.length-1];
+    x.saldoActual=last?(+last.saldoFin||0):0;
+    x.aportes=ap; x.retiros=re; x.gananciaTotal=gTotal; x.gananciaAno=gAno; x.gananciaMes=gMes;
+    x.rentAcum=tieneRent?acum-1:null; x.rentAno=acumYear-1;
+    x.rent=x.f?toNum(x.f.Rent365d):null;
+    // aliases usados por renderCartera
+    x.capitalNeto=x.saldoActual; x.interes=x.gananciaTotal; x.rentEfect=x.rentAcum;
+    return x;
   });
 }
 
-const BYFUND_COLS=["Fondo","AGF","Serie","Aportes","Retiros","Capital neto","Rent365d","Interés año","Interés mes","Interés total ref.","Rentab. efectiva %"];
+const BYFUND_COLS=["Fondo","AGF","Serie","Saldo actual","Aportes","Retiros","Ganancia año","Ganancia mes","Ganancia total","Rentab. acum. %"];
 function renderByFund(){
   const head=document.getElementById("byFundHead"), body=document.getElementById("byFundBody"); if(!head)return;
   head.innerHTML="<tr>"+BYFUND_COLS.map((h,i)=>`<th class="${i>=3?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
   const groups=agruparPorFondo();
-  if(!groups.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${BYFUND_COLS.length}">Sin movimientos con fondo y monto válidos.</td></tr>`; return; }
-  groups.sort((a,b)=>b.capitalNeto-a.capitalNeto);
+  if(!groups.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${BYFUND_COLS.length}">Sin registros con fondo válido.</td></tr>`; return; }
+  groups.sort((a,b)=>b.saldoActual-a.saldoActual);
+  const col=v=>v>=0?"#2F6B4F":"var(--burgundy)";
   body.innerHTML=groups.map(g=>`<tr>
     <td class="trunc" title="${escAttr(g.fondo)}">${escHtml(g.fondo)}</td>
     <td>${escHtml(g.agf)}</td><td>${escHtml(String(g.serie))}</td>
-    <td class="right num">${fmtCLP(g.aportes)}</td>
+    <td class="right num" style="font-weight:600">${fmtCLP(g.saldoActual)}</td>
+    <td class="right num">${g.aportes?fmtCLP(g.aportes):DASH}</td>
     <td class="right num">${g.retiros?fmtCLP(g.retiros):DASH}</td>
-    <td class="right num" style="font-weight:600">${fmtCLP(g.capitalNeto)}</td>
-    <td class="right num">${fmtPct(g.rent)}</td>
-    <td class="right num">${g.interesYTD?fmtCLP(g.interesYTD):DASH}</td>
-    <td class="right num">${g.interesMes?fmtCLP(g.interesMes):DASH}</td>
-    <td class="right num" style="font-weight:600">${fmtCLP(g.interes)}</td>
-    <td class="right num">${g.rentEfect===null?DASH:nf2.format(g.rentEfect*100)+"%"}</td>
+    <td class="right num"><span style="color:${col(g.gananciaAno)}">${g.gananciaAno?fmtCLP(g.gananciaAno):DASH}</span></td>
+    <td class="right num"><span style="color:${col(g.gananciaMes)}">${g.gananciaMes?fmtCLP(g.gananciaMes):DASH}</span></td>
+    <td class="right num" style="font-weight:600"><span style="color:${col(g.gananciaTotal)}">${g.gananciaTotal?fmtCLP(g.gananciaTotal):DASH}</span></td>
+    <td class="right num">${g.rentAcum===null?DASH:nf2.format(g.rentAcum*100)+"%"}</td>
   </tr>`).join("");
 }
 
 function renderHoldSummary(){
   const el=document.getElementById("holdSummary"); if(!el)return;
   const groups=agruparPorFondo();
+  const saldoActual=groups.reduce((a,g)=>a+g.saldoActual,0);
   const totalAportes=groups.reduce((a,g)=>a+g.aportes,0);
   const totalRetiros=groups.reduce((a,g)=>a+g.retiros,0);
-  const capitalNeto=groups.reduce((a,g)=>a+g.capitalNeto,0);
-  const interesTotal=groups.reduce((a,g)=>a+g.interes,0);
-  const interesYTD=groups.reduce((a,g)=>a+g.interesYTD,0);
-  const interesMes=groups.reduce((a,g)=>a+g.interesMes,0);
-  // Rent365d ponderada por capital neto vigente
-  const rentW=weightedAvg(groups.map(g=>[g.rent,Math.max(0,g.capitalNeto)]));
-  const tacW=weightedAvg(groups.map(g=>[toNum(g.f.TAC),Math.max(0,g.capitalNeto)]));
-  const durW=weightedAvg(groups.map(g=>[toNum(g.f.DuracionDias),Math.max(0,g.capitalNeto)]));
-  // Rentabilidad total efectiva referencial (interés / capital neto)
-  const rentEfectTotal = capitalNeto>0 ? interesTotal/capitalNeto : (totalAportes>0?interesTotal/totalAportes:null);
-
+  const gTotal=groups.reduce((a,g)=>a+g.gananciaTotal,0);
+  const gAno=groups.reduce((a,g)=>a+g.gananciaAno,0);
+  const gMes=groups.reduce((a,g)=>a+g.gananciaMes,0);
+  // Rentabilidad de la cartera: ponderada por saldo actual
+  const rentW=weightedAvg(groups.map(g=>[g.rentAcum,Math.max(0,g.saldoActual)]));
   const cells=[
-    {l:"Total invertido (aportes)",v:fmtCLP(totalAportes)},
-    {l:"Total retirado",v:fmtCLP(totalRetiros)},
-    {l:"Capital neto vigente",v:fmtCLP(capitalNeto)},
+    {l:"Saldo actual total",v:fmtCLP(saldoActual)},
     {l:"N° de fondos",v:fmtInt(groups.length)},
-    {l:"Interés ganado este año",v:fmtCLP(interesYTD)},
-    {l:"Interés ganado en "+mesActualNombre(),v:fmtCLP(interesMes)},
-    {l:"Interés ganado total ref.",v:fmtCLP(interesTotal)},
-    {l:"Rentab. total efectiva ref.",v:rentEfectTotal===null?DASH:nf2.format(rentEfectTotal*100)+"%"},
-    {l:"Rent365d ponderada",v:fmtPct(rentW)},
-    {l:"TAC ponderada",v:fmtPct(tacW)},
-    {l:"Duración ponderada",v:durW===null?DASH:fmtInt(durW)+" días"}
+    {l:"Total aportado",v:fmtCLP(totalAportes)},
+    {l:"Total retirado",v:fmtCLP(totalRetiros)},
+    {l:"Ganancia en "+mesActualNombre(),v:fmtCLP(gMes)},
+    {l:"Ganancia este año",v:fmtCLP(gAno)},
+    {l:"Ganancia total",v:fmtCLP(gTotal)},
+    {l:"Rentabilidad cartera (pond.)",v:rentW===null?DASH:nf2.format(rentW*100)+"%"}
   ];
-  // Distribución por banco (por capital neto)
-  const porAgf={}; groups.forEach(g=>{ if(g.capitalNeto>0)porAgf[g.agf]=(porAgf[g.agf]||0)+g.capitalNeto; });
+  const porAgf={}; groups.forEach(g=>{ if(g.saldoActual>0)porAgf[g.agf]=(porAgf[g.agf]||0)+g.saldoActual; });
   let bar="";
-  if(capitalNeto>0){
+  if(saldoActual>0){
     const entries=Object.entries(porAgf).sort((a,b)=>b[1]-a[1]); const pal=CLASIF_PALETTE;
-    bar=`<div class="stacked" style="margin-bottom:14px">`+entries.map(([a,v],i)=>`<div class="seg" style="width:${(v/capitalNeto*100).toFixed(2)}%;background:${pal[i%pal.length]}" title="${escAttr(a)}: ${fmtCLP(v)}">${(v/capitalNeto*100)>=9?escHtml(a):""}</div>`).join("")+`</div><div class="stacked-legend" style="margin-bottom:16px">`+entries.map(([a,v],i)=>`<span class="li"><span class="sq" style="background:${pal[i%pal.length]}"></span>${escHtml(a)} — <strong>${fmtCLP(v)}</strong></span>`).join("")+`</div>`;
+    bar=`<div class="stacked" style="margin-bottom:14px">`+entries.map(([a,v],i)=>`<div class="seg" style="width:${(v/saldoActual*100).toFixed(2)}%;background:${pal[i%pal.length]}" title="${escAttr(a)}: ${fmtCLP(v)}">${(v/saldoActual*100)>=9?escHtml(a):""}</div>`).join("")+`</div><div class="stacked-legend" style="margin-bottom:16px">`+entries.map(([a,v],i)=>`<span class="li"><span class="sq" style="background:${pal[i%pal.length]}"></span>${escHtml(a)} — <strong>${fmtCLP(v)}</strong></span>`).join("")+`</div>`;
   }
-  el.innerHTML=(capitalNeto>0?bar:'<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0 0 14px">Ingresa movimientos con fondo, monto y fecha para ver los resultados.</p>')+`<div class="summary-grid">`+cells.map(c=>`<div class="summary-cell"><div class="s-label">${c.l}</div><div class="s-val num">${c.v}</div></div>`).join("")+`</div><p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">Interés y rentabilidad son estimaciones referenciales basadas en la Rent365d histórica prorrateada por días; no reflejan el valor cuota efectivo ni descuentan comisiones de rescate.</p>`;
+  el.innerHTML=(saldoActual>0?bar:'<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0 0 14px">Ingresa saldos y flujos por mes para ver los resultados.</p>')+`<div class="summary-grid">`+cells.map(c=>`<div class="summary-cell"><div class="s-label">${c.l}</div><div class="s-val num">${c.v}</div></div>`).join("")+`</div><p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">La rentabilidad se calcula con los saldos y flujos reales que registras (método Dietz: ganancia ÷ saldo inicial más flujos ponderados). No usa la Rent365d histórica.</p>`;
 }
 
 /* ============================================================
@@ -2027,8 +2036,7 @@ function initNav(){
     if(tab==="dap")renderDap();
     if(tab==="dashboard"&&STATE.loaded)drawScatter(getFiltered());
   }));
-  document.getElementById("btnAddInv").addEventListener("click",()=>addMov("inversion"));
-  document.getElementById("btnAddRet").addEventListener("click",()=>addMov("retiro"));
+  document.getElementById("btnAddInv").addEventListener("click",()=>addMov());
   document.getElementById("btnAddLoan").addEventListener("click",addLoan);
   document.getElementById("btnAddDap").addEventListener("click",addDap);
   document.getElementById("btnSaveInv").addEventListener("click",()=>guardarEnSheet("inversiones"));
