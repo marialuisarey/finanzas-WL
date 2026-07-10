@@ -1157,14 +1157,19 @@ function fundColor(label){
 /* Gráfico de torta (donut) SVG: participación de cada posición en el total. */
 function drawDonut(items,total){
   if(!(total>0)) return "";
-  const size=210,cx=size/2,cy=size/2,r=96,rin=58; let a0=-Math.PI/2,paths="";
+  const size=230,cx=size/2,cy=size/2,r=100,rin=58; let a0=-Math.PI/2,paths="",labels="";
   items.forEach(i=>{ const frac=i.capital/total; if(frac<=0)return; const a1=a0+frac*2*Math.PI;
     if(frac>=0.9999){ paths+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${i.color}"/>`; }
     else { const x0=cx+r*Math.cos(a0),y0=cy+r*Math.sin(a0),x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1),large=frac>0.5?1:0;
       paths+=`<path d="M ${cx} ${cy} L ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z" fill="${i.color}" stroke="var(--surface)" stroke-width="1.5"/>`; }
+    // Etiqueta de porcentaje (solo si la porción es visible)
+    if(frac>=0.05){ const am=(a0+a1)/2, lr=(r+rin)/2, lx=cx+lr*Math.cos(am), ly=cy+lr*Math.sin(am);
+      labels+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="12" font-weight="700" font-family="Georgia,serif">${nf2.format(frac*100)}%</text>`; }
     a0=a1; });
   paths+=`<circle cx="${cx}" cy="${cy}" r="${rin}" fill="var(--surface)"/>`;
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Distribución de la cartera por fondo">${paths}</svg>`;
+  paths+=`<text x="${cx}" y="${cy-6}" text-anchor="middle" fill="var(--ink-subtle)" font-size="9.5" font-family="Georgia,serif" style="text-transform:uppercase;letter-spacing:.1em">2026</text>`;
+  paths+=`<text x="${cx}" y="${cy+11}" text-anchor="middle" fill="var(--navy)" font-size="13" font-weight="700" font-family="Georgia,serif">${items.length} fondos</text>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Distribución de la cartera por fondo, año 2026">${paths}${labels}</svg>`;
 }
 function renderCartera(){
   const el=document.getElementById("carteraResumen"); if(!el) return;
@@ -1201,7 +1206,7 @@ function renderCartera(){
       <span class="num" style="width:110px;text-align:right;font-size:12px;font-weight:600;color:${gCol}">${(i.gMes||0)!==0?((i.gMes>0?"+":"")+fmtCLP(i.gMes)):DASH}</span>
     </div>`; }).join("");
   const pieBlock=`<div style="display:flex;gap:28px;align-items:center;flex-wrap:wrap;margin-bottom:18px">
-    <div style="flex:none;position:relative;text-align:center">${pie}<div style="font-size:10.5px;color:var(--ink-subtle);text-transform:uppercase;letter-spacing:.08em;margin-top:4px">Cartera por fondo</div></div>
+    <div style="flex:none;position:relative;text-align:center">${pie}<div style="font-size:10.5px;color:var(--ink-subtle);text-transform:uppercase;letter-spacing:.08em;margin-top:4px">Cartera por fondo · 2026</div></div>
     <div style="flex:1;min-width:300px">
       <div style="display:flex;align-items:center;gap:9px;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-muted);font-family:var(--font-label);padding-bottom:5px;border-bottom:1.5px solid var(--rule)"><span style="width:12px;flex:none"></span><span style="flex:1">Fondo</span><span>Invertido</span><span style="width:56px;text-align:right">%</span><span style="width:110px;text-align:right">Rentó ${mesActualNombre()}</span></div>
       ${legendRows}
@@ -1237,7 +1242,7 @@ function renderCartera(){
       `<div class="summary-cell"><div class="s-label">N° de posiciones</div><div class="s-val num">${fmtInt(items.length)}</div></div>`+
     `</div>`+
     /* Consolidado: gráfico de torta con el peso y la renta de cada fondo */
-    `<div class="s-label" style="margin-bottom:10px">Cuánto hay invertido en cada fondo y cuánto rentó</div>`+
+    `<div class="s-label" style="margin-bottom:10px">Cuánto hay invertido en cada fondo y cuánto rentó — inversiones 2026</div>`+
     pieBlock+
     `<div style="display:grid;grid-template-columns:1fr 120px 150px 150px;gap:14px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-muted);font-family:var(--font-label);padding-bottom:6px;border-bottom:1.5px solid var(--rule);margin-top:6px"><span>Fondo / posición</span><span style="text-align:right">% del total</span><span style="text-align:right">Monto invertido</span><span style="text-align:right">Rentó en ${mesActualNombre()}</span></div>`+
     rows+
@@ -1892,7 +1897,7 @@ function renderPrestamos(){
       <td><input type="text" class="l-contraparte" style="min-width:170px" placeholder="Empresa relacionada" value="${escAttr(l.contraparte||"")}" aria-label="Contraparte"></td>
       <td><input type="date" class="l-fecha" style="width:150px" value="${l.fecha||""}" aria-label="Fecha de otorgamiento"></td>
       <td class="right"><input type="text" inputmode="numeric" class="l-monto num" style="width:130px;text-align:right" placeholder="$0" value="${l.monto?nfInt.format(l.monto):""}" aria-label="Monto"></td>
-      <td class="right"><span class="input-unit" style="justify-content:flex-end"><input type="number" step="0.01" class="l-tasa num" style="width:74px;text-align:right" placeholder="0" value="${l.tasa||""}" aria-label="Tasa anual"><span class="unit">%</span></span></td>
+      <td class="right"><span class="input-unit" style="justify-content:flex-end"><input type="text" inputmode="decimal" class="l-tasa num" style="width:74px;text-align:right" placeholder="0,0" value="${l.tasa!=null&&l.tasa!==""?String(l.tasa).replace(".",","):""}" aria-label="Tasa anual"><span class="unit">%</span></span></td>
       <td class="right"><span class="input-unit" style="justify-content:flex-end"><input type="number" step="1" min="1" class="l-plazo num" style="width:64px;text-align:right" value="${l.plazo||""}" aria-label="Plazo en meses"><span class="unit">m</span></span></td>
       <td><select class="l-sistema" style="min-width:150px" aria-label="Sistema de amortización">${sisOpts(l.sistema)}</select></td>
       <td class="right num">${m.cuota!==null?fmtCLP(m.cuota):(l.sistema==="bullet"&&m.n>0?"var.":DASH)}</td>
@@ -1921,7 +1926,8 @@ function renderPrestamos(){
     tr.querySelector(".l-fecha").addEventListener("change",e=>{ l.fecha=e.target.value; });
     const monto=tr.querySelector(".l-monto");
     monto.addEventListener("input",e=>{ l.monto=parseMiles(e.target.value); e.target.value=l.monto?nfInt.format(l.monto):""; refreshLoanRow(id); });
-    tr.querySelector(".l-tasa").addEventListener("input",e=>{ l.tasa=e.target.value===""?0:toNum(e.target.value)||0; refreshLoanRow(id); });
+    tr.querySelector(".l-tasa").addEventListener("input",e=>{ l.tasa=e.target.value===""?0:toNum(e.target.value)||0; });
+    tr.querySelector(".l-tasa").addEventListener("blur",()=>refreshLoanRow(id));
     tr.querySelector(".l-plazo").addEventListener("input",e=>{ l.plazo=e.target.value===""?0:Math.max(0,Math.round(toNum(e.target.value)||0)); refreshLoanRow(id); });
     tr.querySelector(".l-sistema").addEventListener("change",e=>{ l.sistema=e.target.value; renderPrestamos(); });
     tr.querySelector(".l-amort").addEventListener("click",()=>{ STATE.loanExpanded[id]=!STATE.loanExpanded[id]; renderPrestamos(); });
