@@ -1408,9 +1408,9 @@ const PERSIST = {
   },
   dap: {
     hoja: "DAP",
-    fields: ["banco","fecha","monto","dias","tasa"],
-    toRow: d => ({ banco:d.banco, fecha:d.fecha, monto:d.monto, dias:d.dias, tasa:d.tasa }),
-    fromRow: r => ({ id:++STATE.dapSeq, banco:r.banco||"", fecha:normFechaISO(r.fecha), monto:toNum(r.monto)||0, dias:Math.max(0,Math.round(toNum(r.dias)||0)), tasa:toNum(r.tasa)||0 }),
+    fields: ["banco","fecha","monto","dias","tasa","interes"],
+    toRow: d => ({ banco:d.banco, fecha:d.fecha, monto:d.monto, dias:d.dias, tasa:d.tasa, interes:d.interes }),
+    fromRow: r => ({ id:++STATE.dapSeq, banco:r.banco||"", fecha:normFechaISO(r.fecha), monto:toNum(r.monto)||0, dias:Math.max(0,Math.round(toNum(r.dias)||0)), tasa:toNum(r.tasa)||0, interes:toNum(r.interes)||0 }),
     target: rows => { STATE.daps = rows; },
     render: () => renderDap()
   },
@@ -1875,13 +1875,14 @@ function loanMetrics(loan){
   const P=toNum(loan.monto)||0, n=Math.max(0,Math.round(toNum(loan.plazo)||0)), tasaAnual=toNum(loan.tasa)||0;
   const rentPeriodo = P>0 ? a.totalInteres/P : null;          // interés total / capital
   const rentAnualizada = (P>0&&n>0) ? rentPeriodo*(12/n) : null; // llevada a base anual
-  return { ...a, P, n, tasaAnual, rentPeriodo, rentAnualizada };
+  const rentMensual = (P>0&&n>0) ? rentPeriodo*(1/n) : null;   // por mes (promedio)
+  return { ...a, P, n, tasaAnual, rentPeriodo, rentAnualizada, rentMensual };
 }
 
-const LOAN_COLS=["Contraparte","Fecha","Monto (CLP)","Tasa anual","Plazo","Sistema","Cuota estim.","Interés total","Rentab. período",""];
+const LOAN_COLS=["Contraparte","Fecha","Monto (CLP)","Tasa anual","Plazo","Sistema","Cuota estim.","Interés total","Rentab. período","Rentab. mensual",""];
 function renderPrestamos(){
   const head=document.getElementById("loanHead"), body=document.getElementById("loanBody"); if(!head)return;
-  head.innerHTML="<tr>"+LOAN_COLS.map((h,idx)=>`<th class="${idx>=2&&idx<=8?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
+  head.innerHTML="<tr>"+LOAN_COLS.map((h,idx)=>`<th class="${idx>=2&&idx<=9?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
   if(!STATE.loans.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${LOAN_COLS.length}">Aún no hay préstamos registrados. Usa "Agregar préstamo" para empezar.</td></tr>`; renderLoanSummary(); return; }
 
   const sisOpts=(sel)=>Object.entries(LOAN_SISTEMAS).map(([v,l])=>`<option value="${v}" ${sel===v?"selected":""}>${escHtml(l)}</option>`).join("");
@@ -1897,6 +1898,7 @@ function renderPrestamos(){
       <td class="right num">${m.cuota!==null?fmtCLP(m.cuota):(l.sistema==="bullet"&&m.n>0?"var.":DASH)}</td>
       <td class="right num" style="font-weight:600">${m.totalInteres>0?fmtCLP(m.totalInteres):DASH}</td>
       <td class="right num">${m.rentPeriodo===null?DASH:nf2.format(m.rentPeriodo*100)+"%"}</td>
+      <td class="right num" style="font-weight:600">${m.rentMensual===null?DASH:nf2.format(m.rentMensual*100)+"%"}</td>
       <td style="white-space:nowrap"><button class="btn ghost sm l-amort" type="button">${STATE.loanExpanded[l.id]?"Ocultar":"Ver tabla"}</button> <button class="btn ghost sm l-del" type="button">Quitar</button></td>
     </tr>`;
     let filaAmort="";
@@ -1938,6 +1940,7 @@ function refreshLoanRow(id){
   cells[6].innerHTML=m.cuota!==null?fmtCLP(m.cuota):(l.sistema==="bullet"&&m.n>0?"var.":DASH);
   cells[7].innerHTML=m.totalInteres>0?fmtCLP(m.totalInteres):DASH;
   cells[8].innerHTML=m.rentPeriodo===null?DASH:nf2.format(m.rentPeriodo*100)+"%";
+  cells[9].innerHTML=m.rentMensual===null?DASH:nf2.format(m.rentMensual*100)+"%";
   if(STATE.loanExpanded[id]) renderPrestamos();
 }
 
@@ -1975,7 +1978,8 @@ function renderLoanSummary(){
     {l:"Total a recibir (capital + interés)",v:fmtCLP(totalPrestado+interesTotal)},
     {l:"Tasa anual promedio ponderada",v:tasaW===null?DASH:nf2.format(tasaW)+"%"},
     {l:"Plazo promedio ponderado",v:plazoW===null?DASH:fmtInt(plazoW)+" meses"},
-    {l:"Rentabilidad total del período",v:rentTotalPeriodo===null?DASH:nf2.format(rentTotalPeriodo*100)+"%"}
+    {l:"Rentabilidad total del período",v:rentTotalPeriodo===null?DASH:nf2.format(rentTotalPeriodo*100)+"%"},
+    {l:"Rentabilidad mensual promedio",v:(plazoW&&rentTotalPeriodo!=null&&plazoW>0)?nf2.format(rentTotalPeriodo/plazoW*100)+"%":DASH}
   ];
   // Distribución por contraparte
   const porCon={}; valid.forEach(l=>{ const c=l.contraparte||"(sin nombre)"; porCon[c]=(porCon[c]||0)+(toNum(l.monto)||0); });
@@ -2000,12 +2004,25 @@ function overlapDias(aS,aE,bS,bE){ const s=Math.max(aS,bS), e=Math.min(aE,bE); c
 function addDap(){ STATE.daps.push({id:++STATE.dapSeq,banco:"",fecha:hoyISO(),monto:0,dias:90,tasa:0}); renderDap(); }
 function removeDap(id){ STATE.daps=STATE.daps.filter(d=>d.id!==id); renderDap(); }
 
-/* Métricas de un DAP. */
+/* Métricas de un DAP. El interés al vencimiento es el dato principal: se
+   ingresa y de ahí se derivan la tasa anual y la tasa mensual (base actual/365
+   y /30). Si no hay interés ingresado pero sí tasa, se calcula el interés. */
 function dapMetrics(d){
-  const P=toNum(d.monto)||0, dias=Math.max(0,Math.round(toNum(d.dias)||0)), tasa=toNum(d.tasa)||0;
+  const P=toNum(d.monto)||0, dias=Math.max(0,Math.round(toNum(d.dias)||0));
   const ini=parseISOd(d.fecha), fin=ini?addDias(ini,dias):null;
-  const diario=P*(tasa/100)/365;              // interés diario (base actual/365)
-  const interesTotal=diario*dias;             // interés al vencimiento
+  const intManual=toNum(d.interes);
+  let interesTotal, tasaAnual, tasaMensual;
+  if(intManual!==null && intManual>0 && P>0 && dias>0){
+    interesTotal=intManual;
+    const rPeriodo=interesTotal/P;              // rentabilidad del período
+    tasaAnual=rPeriodo*(365/dias)*100;          // anualizada
+    tasaMensual=rPeriodo*(30/dias)*100;         // mensualizada
+  } else {
+    const tasa=toNum(d.tasa)||0;
+    interesTotal=P*(tasa/100)*(dias/365);
+    tasaAnual=tasa; tasaMensual=(P>0&&dias>0)?(interesTotal/P)*(30/dias)*100:0;
+  }
+  const diario=dias>0?interesTotal/dias:0;      // interés diario
   const hoy=new Date(); hoy.setHours(0,0,0,0);
   let devengadoHoy=0, vigente=false, diasTransc=0;
   if(ini&&fin){
@@ -2013,7 +2030,7 @@ function dapMetrics(d){
     devengadoHoy=diario*diasTransc;
     vigente = hoy.getTime()<fin.getTime();
   }
-  return { P,dias,tasa,ini,fin,diario,interesTotal,devengadoHoy,vigente,diasTransc };
+  return { P,dias,tasa:tasaAnual,tasaAnual,tasaMensual,ini,fin,diario,interesTotal,devengadoHoy,vigente,diasTransc };
 }
 /* Interés devengado de un DAP dentro de un rango [from,to], tope hoy. */
 function dapDevengadoEnRango(d,from,to){
@@ -2024,10 +2041,10 @@ function dapDevengadoEnRango(d,from,to){
   return m.diario*dias;
 }
 
-const DAP_COLS=["Banco / AGF","Fecha inversión","Monto (CLP)","Período","Tasa anual","Vencimiento","Interés al venc.","Devengado a hoy","Estado",""];
+const DAP_COLS=["Banco / AGF","Fecha inversión","Monto (CLP)","Período","Interés al venc.","Tasa anual","Tasa mensual","Vencimiento","Devengado a hoy","Estado",""];
 function renderDap(){
   const head=document.getElementById("dapHead"), body=document.getElementById("dapBody"); if(!head)return;
-  head.innerHTML="<tr>"+DAP_COLS.map((h,i)=>`<th class="${i>=2&&i<=7?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
+  head.innerHTML="<tr>"+DAP_COLS.map((h,i)=>`<th class="${i>=2&&i<=8?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
   const agfSug = (STATE.fondos.length?distinct("AGF"):[]).map(a=>`<option value="${escAttr(a)}"></option>`).join("");
   if(!document.getElementById("agfDatalist")){ const dl=document.createElement("datalist"); dl.id="agfDatalist"; dl.innerHTML=agfSug; document.body.appendChild(dl); }
   if(!STATE.daps.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${DAP_COLS.length}">Aún no hay depósitos registrados. Usa "Agregar DAP" para empezar.</td></tr>`; renderDapKpis(); renderDapMonth(); return; }
@@ -2039,9 +2056,10 @@ function renderDap(){
       <td><input type="date" class="d-fecha" style="width:150px" value="${d.fecha||""}" aria-label="Fecha de inversión"></td>
       <td class="right"><input type="text" inputmode="numeric" class="d-monto num" style="width:130px;text-align:right" placeholder="$0" value="${d.monto?nfInt.format(d.monto):""}" aria-label="Monto"></td>
       <td class="right"><span class="input-unit" style="justify-content:flex-end"><input type="number" step="1" min="1" class="d-dias num" style="width:66px;text-align:right" value="${d.dias||""}" aria-label="Período en días"><span class="unit">d</span></span></td>
-      <td class="right"><span class="input-unit" style="justify-content:flex-end"><input type="number" step="0.01" class="d-tasa num" style="width:72px;text-align:right" placeholder="0" value="${d.tasa||""}" aria-label="Tasa anual"><span class="unit">%</span></span></td>
+      <td class="right"><input type="text" inputmode="numeric" class="d-interes num" style="width:120px;text-align:right" placeholder="$0" value="${d.interes?nfInt.format(d.interes):""}" aria-label="Interés al vencimiento"></td>
+      <td class="right num">${m.tasaAnual?nf2.format(m.tasaAnual)+"%":DASH}</td>
+      <td class="right num" style="font-weight:600">${m.tasaMensual?nf2.format(m.tasaMensual)+"%":DASH}</td>
       <td class="right num">${m.fin?fmtFechaCorta(m.fin):DASH}</td>
-      <td class="right num" style="font-weight:600">${m.interesTotal>0?fmtCLP(m.interesTotal):DASH}</td>
       <td class="right num">${m.devengadoHoy>0?fmtCLP(m.devengadoHoy):DASH}</td>
       <td>${estado}</td>
       <td><button class="btn ghost sm d-del" type="button">Quitar</button></td>
@@ -2054,7 +2072,7 @@ function renderDap(){
     const monto=tr.querySelector(".d-monto");
     monto.addEventListener("input",e=>{ d.monto=parseMiles(e.target.value); e.target.value=d.monto?nfInt.format(d.monto):""; refreshDapRow(id); });
     tr.querySelector(".d-dias").addEventListener("input",e=>{ d.dias=e.target.value===""?0:Math.max(0,Math.round(toNum(e.target.value)||0)); renderDap(); });
-    tr.querySelector(".d-tasa").addEventListener("input",e=>{ d.tasa=e.target.value===""?0:toNum(e.target.value)||0; refreshDapRow(id); });
+    tr.querySelector(".d-interes").addEventListener("input",e=>{ d.interes=parseMiles(e.target.value); e.target.value=d.interes?nfInt.format(d.interes):""; refreshDapRow(id); });
     tr.querySelector(".d-del").addEventListener("click",()=>removeDap(id));
   });
   renderDapKpis(); renderDapMonth(); renderCartera();
@@ -2062,10 +2080,11 @@ function renderDap(){
 function refreshDapRow(id){
   const tr=document.querySelector(`#dapBody tr[data-id="${id}"]`); if(!tr)return;
   const d=STATE.daps.find(x=>x.id===id), m=dapMetrics(d), c=tr.querySelectorAll("td");
-  c[5].innerHTML=m.fin?fmtFechaCorta(m.fin):DASH;
-  c[6].innerHTML=m.interesTotal>0?fmtCLP(m.interesTotal):DASH;
-  c[7].innerHTML=m.devengadoHoy>0?fmtCLP(m.devengadoHoy):DASH;
-  renderDapKpis(); renderDapMonth();
+  c[5].innerHTML=m.tasaAnual?nf2.format(m.tasaAnual)+"%":DASH;
+  c[6].innerHTML=m.tasaMensual?nf2.format(m.tasaMensual)+"%":DASH;
+  c[7].innerHTML=m.fin?fmtFechaCorta(m.fin):DASH;
+  c[8].innerHTML=m.devengadoHoy>0?fmtCLP(m.devengadoHoy):DASH;
+  renderDapKpis(); renderDapMonth(); renderCartera();
 }
 
 function renderDapKpis(){
@@ -2074,20 +2093,21 @@ function renderDapKpis(){
   const now=new Date(), year=now.getFullYear(), month=now.getMonth();
   const y0=new Date(year,0,1).getTime(), y1=new Date(year+1,0,1).getTime();
   const m0=new Date(year,month,1).getTime(), m1=new Date(year,month+1,1).getTime();
-  let vigente=0, interesYTD=0, interesMes=0, interesTotalProy=0; const tasaPairs=[];
+  let vigente=0, interesYTD=0, interesMes=0, interesTotalProy=0; const tasaPairs=[], tasaMPairs=[];
   valid.forEach(d=>{ const m=dapMetrics(d);
     if(m.vigente)vigente+=m.P;
     interesYTD+=dapDevengadoEnRango(d,y0,y1);
     interesMes+=dapDevengadoEnRango(d,m0,m1);
-    interesTotalProy+=m.interesTotal; tasaPairs.push([m.tasa,m.P]); });
-  const tasaW=weightedAvg(tasaPairs);
+    interesTotalProy+=m.interesTotal; tasaPairs.push([m.tasaAnual,m.P]); tasaMPairs.push([m.tasaMensual,m.P]); });
+  const tasaW=weightedAvg(tasaPairs), tasaMW=weightedAvg(tasaMPairs);
   const cells=[
     {l:"N° de DAP registrados",v:fmtInt(valid.length)},
     {l:"Capital vigente hoy",v:fmtCLP(vigente)},
     {l:"Interés ganado este año",v:fmtCLP(interesYTD)},
     {l:"Interés ganado en "+mesActualNombre(),v:fmtCLP(interesMes)},
     {l:"Interés total proyectado",v:fmtCLP(interesTotalProy)},
-    {l:"Tasa anual promedio ponderada",v:tasaW===null?DASH:nf2.format(tasaW)+"%"}
+    {l:"Tasa anual promedio ponderada",v:tasaW===null?DASH:nf2.format(tasaW)+"%"},
+    {l:"Tasa mensual promedio ponderada",v:tasaMW===null?DASH:nf2.format(tasaMW)+"%"}
   ];
   el.innerHTML=`<div class="summary-grid">`+cells.map(c=>`<div class="summary-cell"><div class="s-label">${c.l}</div><div class="s-val num">${c.v}</div></div>`).join("")+`</div>`;
 }
