@@ -336,9 +336,13 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
 .summary-cell .s-val{color:var(--navy);}
 /* Capital box: acento superior burdeo */
 .capital-box{border-top:3px solid var(--burgundy);}
-/* Macro cards: hover sutil */
+/* Macro cards: hover invierte a fondo blanco + texto azul para legibilidad */
 .macro-card{transition:background .14s;}
-.macro-card:hover{background:#FAFBFD;}
+.macro-card:hover{background:#FFFFFF;border-radius:4px;}
+.macro-card:hover .m-name{color:var(--navy);}
+.macro-card:hover .m-val,.macro-card:hover.ref .m-val{color:var(--navy);}
+.macro-card:hover .m-date{color:var(--navy-soft);}
+.macro-card:hover .m-icon{background:rgba(30,47,77,.10);color:var(--navy);}
 /* Chips de serie macro activos */
 #macroSerieBtns .btn.accent{background:var(--navy);border-color:var(--navy);}
 /* Menú con íconos monoline (estilo Wild Lama / Lucide) */
@@ -1493,7 +1497,7 @@ async function cargarGuardados(){
    saldos reales (no de la Rent365d histórica). */
 function mesActualISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
 function normMes(v){ if(v==null||v==="")return ""; const s=String(v); let m=s.match(/^(\d{4})-(\d{2})/); if(m)return m[1]+"-"+m[2]; const d=new Date(s); if(!isNaN(d))return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); return ""; }
-function addMov(){ STATE.holdings.push({id:++STATE.holdSeq,agf:"",fondo:"",serie:"",mes:mesActualISO(),saldoIni:0,aportes:0,retiros:0,saldoFin:0,cuotaIni:"",cuotaFin:"",cuotaRet:"",aportesDet:[],retirosDet:[]}); renderInversiones(); }
+function addMov(){ const id=++STATE.holdSeq; STATE.holdings.push({id:id,agf:"",fondo:"",serie:"",mes:mesActualISO(),saldoIni:0,aportes:0,retiros:0,saldoFin:0,cuotaIni:"",cuotaFin:"",cuotaRet:"",aportesDet:[],retirosDet:[]}); STATE.holdRowOpen[id]=true; renderInversiones(); }
 function removeHolding(id){ STATE.holdings=STATE.holdings.filter(h=>h.id!==id); delete STATE.holdExpanded[id]; delete STATE.holdExpandedRe[id]; renderInversiones(); }
 function clearHoldings(){ STATE.holdings=[]; renderInversiones(); }
 /* Suma de los aportes / retiros detallados (si existen). */
@@ -1509,13 +1513,17 @@ function renderInversiones(){
   const head=document.getElementById("holdHead"), body=document.getElementById("holdBody");
   if(!head)return;
   head.innerHTML="<tr>"+HOLD_COLS.map((h,i)=>`<th class="${i>=4&&i<=6?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
-  if(!STATE.loaded){ body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Los datos de fondos aún no están disponibles.</td></tr>`; return; }
-  if(!STATE.holdings.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Aún no hay registros. Usa "Agregar registro mensual" para empezar.</td></tr>`; renderByFund(); renderHoldSummary(); renderCartera(); return; }
+  if(!STATE.holdings.length){
+    if(!STATE.loaded){ body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Cargando datos… o presiona "Agregar registro mensual" para empezar.</td></tr>`; }
+    else { body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Aún no hay registros. Usa "Agregar registro mensual" para empezar.</td></tr>`; }
+    renderByFund(); renderHoldSummary(); renderCartera(); return;
+  }
 
   const opt=(v,sel)=>`<option value="${escAttr(v)}" ${String(sel)===String(v)?"selected":""}>${escHtml(v)}</option>`;
   const gColor=v=>v>=0?"#2E6B52":"#B03A3A";
   const mesLabel=m=>{ const x=String(m||"").match(/^(\d{4})-(\d{2})/); return x?MESES_CORTO[+x[2]-1]+" "+x[1]:(m||"—"); };
   body.innerHTML=STATE.holdings.map(h=>{
+   try{
     const open=!!STATE.holdRowOpen[h.id];
     const c=recCalc(h);
     const gCol=c.ganancia===0?DASH:`<span style="color:${gColor(c.ganancia)}">${(c.ganancia>=0?"+":"")+fmtCLP(c.ganancia)}</span>`;
@@ -1560,6 +1568,7 @@ function renderInversiones(){
       </div>
     </td></tr>`;
     return mainRow+panel;
+   }catch(err){ console.error("Error en registro FFMM",h,err); return `<tr data-id="${h.id}" class="hold-main"><td>${escHtml(h.agf||"—")}</td><td class="trunc">${escHtml(h.fondo||"—")}</td><td>${escHtml(String(h.serie||"—"))}</td><td colspan="4" style="color:var(--danger);font-style:italic">Registro con datos inválidos — <button class="btn ghost sm h-del" type="button">Quitar</button></td><td></td></tr>`; }
   }).join("");
 
   /* Toggle por doble clic en la fila condensada (ignora clic en Quitar). */
