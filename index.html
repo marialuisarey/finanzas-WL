@@ -1529,7 +1529,7 @@ function renderInversiones(){
     const gCol=c.ganancia===0?DASH:`<span style="color:${gColor(c.ganancia)}">${(c.ganancia>=0?"+":"")+fmtCLP(c.ganancia)}</span>`;
     const rCol=c.rent===null?DASH:`<span style="color:${gColor(c.rent)}">${nf2.format(c.rent*100)}%</span>`;
     /* Fila condensada: nombre por fondo + mes, saldo, ganancia y rentab. Doble clic despliega. */
-    const mainRow=`<tr data-id="${h.id}" class="hold-main" title="Doble clic para ver y editar aportes, retiros y saldos" style="cursor:pointer">
+    const mainRow=`<tr data-id="${h.id}" class="hold-main" title="Clic en Editar para ver y modificar aportes, retiros y saldos" style="cursor:pointer">
       <td><span style="display:inline-flex;align-items:center;gap:7px"><span class="h-caret" style="color:var(--ink-subtle);font-size:10px;transition:transform .15s;display:inline-block;${open?"transform:rotate(90deg)":""}">▶</span>${escHtml(h.agf||"—")}</span></td>
       <td class="trunc" style="max-width:280px" title="${escAttr(h.fondo||"")}">${escHtml(h.fondo||"—")}</td>
       <td>${escHtml(String(h.serie||"—"))}</td>
@@ -1537,7 +1537,7 @@ function renderInversiones(){
       <td class="right num">${h.saldoFin?fmtCLP(h.saldoFin):DASH}</td>
       <td class="right num">${gCol}</td>
       <td class="right num" style="font-weight:600">${rCol}</td>
-      <td><button class="btn ghost sm h-del" type="button" aria-label="Eliminar">Quitar</button></td>
+      <td style="white-space:nowrap"><button class="btn ${open?'accent':'ghost'} sm h-edit" type="button">${open?"Cerrar":"Editar"}</button> <button class="btn ghost sm h-del" type="button" aria-label="Eliminar">Quitar</button></td>
     </tr>`;
     if(!open) return mainRow;
     /* Panel desplegado: identificación + saldos + cuotas + aportes/retiros. */
@@ -1574,7 +1574,8 @@ function renderInversiones(){
   /* Toggle por doble clic en la fila condensada (ignora clic en Quitar). */
   body.querySelectorAll("tr.hold-main").forEach(tr=>{
     const id=+tr.dataset.id, h=STATE.holdings.find(x=>x.id===id);
-    tr.addEventListener("dblclick",e=>{ if(e.target.closest(".h-del"))return; STATE.holdRowOpen[id]=!STATE.holdRowOpen[id]; renderInversiones(); });
+    tr.addEventListener("dblclick",e=>{ if(e.target.closest(".h-del")||e.target.closest(".h-edit"))return; STATE.holdRowOpen[id]=!STATE.holdRowOpen[id]; renderInversiones(); });
+    tr.querySelector(".h-edit").addEventListener("click",e=>{ e.stopPropagation(); STATE.holdRowOpen[id]=!STATE.holdRowOpen[id]; renderInversiones(); });
     tr.querySelector(".h-del").addEventListener("click",e=>{ e.stopPropagation(); removeHolding(id); });
   });
   /* Listeners del panel desplegado. */
