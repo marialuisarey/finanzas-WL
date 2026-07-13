@@ -511,7 +511,7 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
       </div>
       <div class="section-body">
         <div class="table-scroll" style="max-height:none">
-          <table class="data" id="holdTable"><thead id="holdHead"></thead><tbody id="holdBody"></tbody></table>
+          <table class="data" id="holdTable" style="min-width:760px"><thead id="holdHead"></thead><tbody id="holdBody"></tbody></table>
         </div>
         <p style="font-size:11.5px;color:var(--ink-subtle);margin-top:10px;font-family:var(--font-serif);font-style:italic">Consejo: no cargues cada línea de la cartola del banco. Registra un renglón por fondo y mes con los saldos y los flujos netos. Guarda en la planilla para no perder los datos al recargar.</p>
       </div>
@@ -1549,7 +1549,7 @@ function renderInversiones(){
     const reRows=(h.retirosDet||[]).map((a,idx)=>`<tr data-di="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${idx+1}</td><td><input type="date" class="rd-fecha" style="width:148px" value="${a.fecha||""}"></td><td style="text-align:right"><input type="text" inputmode="numeric" class="rd-monto num" style="width:128px;text-align:right" placeholder="$0" value="${a.monto?nfInt.format(a.monto):""}"></td><td style="text-align:right"><input type="text" class="rd-cuota num" style="width:108px;text-align:right" placeholder="valor cuota" value="${a.cuota!=null?String(a.cuota):""}"></td><td><button class="btn ghost sm rd-del" type="button" style="padding:2px 8px;font-size:9.5px">Quitar</button></td></tr>`).join("");
     const subTbl=(titulo,cls,rows,total,addcls)=>`<div style="margin-top:12px"><div style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--ink-muted);margin-bottom:6px">${titulo}</div><table class="data" style="width:auto;min-width:520px"><thead><tr><th class="right no-sort">#</th><th class="no-sort">Fecha</th><th class="right no-sort">Monto</th><th class="right no-sort">Valor cuota del día</th><th class="no-sort"></th></tr></thead><tbody>${rows||`<tr><td colspan="5" style="color:var(--ink-subtle);font-style:italic;font-family:var(--font-serif)">Sin registros aún.</td></tr>`}</tbody><tfoot><tr style="font-weight:600;border-top:2px solid var(--rule)"><td></td><td>Total</td><td style="text-align:right">${fmtCLP(total)}</td><td></td><td></td></tr></tfoot></table><button class="btn ghost sm ${addcls}" type="button" style="margin-top:8px">+ Agregar</button></div>`;
     const panel=`<tr class="hold-panel" data-for="${h.id}"><td colspan="${HOLD_COLS.length}" style="background:var(--surface-2);padding:16px 18px">
-      <div style="display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:14px 16px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px 16px">
         ${fld("Banco / AGF",`<select class="h-agf">${agfOpts}</select>`)}
         ${fld("Fondo",`<select class="h-fondo">${fondoOpts}</select>`)}
         ${fld("Serie",`<select class="h-serie">${serieOpts}</select>`)}
