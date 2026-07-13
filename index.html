@@ -1521,7 +1521,7 @@ function renderInversiones(){
 
   const opt=(v,sel)=>`<option value="${escAttr(v)}" ${String(sel)===String(v)?"selected":""}>${escHtml(v)}</option>`;
   const gColor=v=>v>=0?"#2E6B52":"#B03A3A";
-  const mesLabel=m=>{ const x=String(m||"").match(/^(\d{4})-(\d{2})/); return x?MESES_CORTO[+x[2]-1]+" "+x[1]:(m||"—"); };
+  const mesLabel=m=>{ const MM=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]; const x=String(m||"").match(/^(\d{4})-(\d{2})/); return x?MM[+x[2]-1]+" "+x[1]:(m||"—"); };
   body.innerHTML=STATE.holdings.map(h=>{
    try{
     const open=!!STATE.holdRowOpen[h.id];
@@ -1575,8 +1575,8 @@ function renderInversiones(){
   body.querySelectorAll("tr.hold-main").forEach(tr=>{
     const id=+tr.dataset.id, h=STATE.holdings.find(x=>x.id===id);
     tr.addEventListener("dblclick",e=>{ if(e.target.closest(".h-del")||e.target.closest(".h-edit"))return; STATE.holdRowOpen[id]=!STATE.holdRowOpen[id]; renderInversiones(); });
-    tr.querySelector(".h-edit").addEventListener("click",e=>{ e.stopPropagation(); STATE.holdRowOpen[id]=!STATE.holdRowOpen[id]; renderInversiones(); });
-    tr.querySelector(".h-del").addEventListener("click",e=>{ e.stopPropagation(); removeHolding(id); });
+    const editBtn=tr.querySelector(".h-edit"); if(editBtn) editBtn.addEventListener("click",e=>{ e.stopPropagation(); STATE.holdRowOpen[id]=!STATE.holdRowOpen[id]; renderInversiones(); });
+    const delBtn=tr.querySelector(".h-del"); if(delBtn) delBtn.addEventListener("click",e=>{ e.stopPropagation(); removeHolding(id); });
   });
   /* Listeners del panel desplegado. */
   body.querySelectorAll("tr.hold-panel").forEach(pr=>{
@@ -2154,7 +2154,7 @@ function renderDapMonth(){
    TAB — EVOLUCIÓN MACRO (hoja Macro_Historico)
    Serie diaria de UF, dólar, euro, UTM (e IPC). Gráfico de línea SVG.
    ============================================================ */
-const MACRO_SERIES = ["Dólar","UF","Euro","UTM"];
+const MACRO_SERIES = ["Dólar","UF","Euro","UTM","EUR/USD"];
 /* Mapea encabezados de la hoja a la serie pedida (tolerante a acentos/mayúsc.). */
 function histField(row, serie){
   const keys=Object.keys(row);
@@ -2189,8 +2189,12 @@ function renderMacroHist(){
 
   // Serie de puntos {fecha, valor}
   const serie=STATE.macroHistSerie;
-  const pts=STATE.macroHist.map(r=>({d:parseHistDate(histFecha(r)), v:toNum(histField(r,serie))}))
-    .filter(p=>p.d&&p.v!==null).sort((a,b)=>a.d-b.d);
+  const pts=STATE.macroHist.map(r=>{
+    let v;
+    if(serie==="EUR/USD"){ const e=toNum(histField(r,"Euro")), d=toNum(histField(r,"Dólar")); v=(e!==null&&d!==null&&d!==0)?e/d:null; }
+    else v=toNum(histField(r,serie));
+    return {d:parseHistDate(histFecha(r)), v};
+  }).filter(p=>p.d&&p.v!==null).sort((a,b)=>a.d-b.d);
 
   drawMacroLine(pts, serie);
   renderMacroHistKpis(pts, serie);
@@ -2205,7 +2209,8 @@ function renderMacroHistKpis(pts, serie){
   const chgD = prev? last.v-prev.v : null;
   const chgP = prev&&prev.v? (last.v-prev.v)/prev.v*100 : null;
   const vals=pts.map(p=>p.v);
-  const money = serie!=="UTM"&&serie!=="UF" ? v=>"$"+nfInt.format(Math.round(v)) : v=>"$"+nfInt.format(Math.round(v));
+  const isRatio = serie==="EUR/USD";
+  const money = isRatio ? v=>nf2.format(v) : v=>"$"+nfInt.format(Math.round(v));
   const col=v=>v>=0?"#2E6B52":"#B03A3A";
   const cells=[
     {l:"Último valor ("+serie+")",v:money(last.v)},
@@ -2230,7 +2235,8 @@ function drawMacroLine(pts, serie){
   const yticks=5;
   for(let i=0;i<=yticks;i++){ const v=lo+(hi-lo)*i/yticks, y=sy(v);
     g+=`<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#E3E6EA" stroke-width="1"/>`;
-    g+=`<text x="${pad.l-8}" y="${y+3}" text-anchor="end" fill="#8792A4" font-size="10" font-family="Georgia,serif">$${nfInt.format(Math.round(v))}</text>`; }
+    const ylbl=serie==="EUR/USD"?nf2.format(v):"$"+nfInt.format(Math.round(v));
+    g+=`<text x="${pad.l-8}" y="${y+3}" text-anchor="end" fill="#8792A4" font-size="10" font-family="Georgia,serif">${ylbl}</text>`; }
   // X labels (hasta 6)
   const nx=Math.min(6,pts.length-1);
   for(let i=0;i<=nx;i++){ const idx=Math.round(i/nx*(pts.length-1)); const p=pts[idx]; const x=sx(p.d.getTime());
