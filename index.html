@@ -399,6 +399,7 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
     <div class="tabs-inner">
       <button class="tab-btn active" data-tab="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
       <button class="tab-btn" data-tab="inversiones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 7V5a2 2 0 0 1 2-2h11"/><circle cx="16" cy="13" r="1.4"/></svg>Inversiones FFMM</button>
+      <button class="tab-btn" data-tab="explora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Explora fondos</button>
       <button class="tab-btn" data-tab="dap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V10"/><path d="M19 21V10"/><path d="M9 21V10"/><path d="M15 21V10"/><path d="M12 3 3 8h18l-9-5Z"/></svg>Inversiones DAP</button>
       <button class="tab-btn" data-tab="prestamos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Préstamos a relacionadas</button>
       <button class="tab-btn" data-tab="macro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-3 3 3 5-6"/></svg>Evolución macro</button>
@@ -428,6 +429,16 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
         <div><span class="eyebrow sec-eyebrow">Rentabilidad mensual</span><h2>Renta por fondo y mes — <span id="mensualYear"></span></h2><div class="sub">Rentabilidad de cada fondo en cada mes del año y la ganancia total generada ese mes.</div></div>
       </div>
       <div class="section-body" id="mensualMatriz"></div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== TAB: EXPLORA FONDOS ==================== -->
+<section class="tab-panel" id="tab-explora">
+  <div class="wrap">
+    <div class="section" style="border:none;padding-top:0">
+      <div class="section-head"><div><span class="eyebrow sec-eyebrow">Buscador</span><h2>Explora fondos</h2><div class="sub">Analiza el universo de fondos disponibles según tu excedente de caja y filtros. Este módulo es solo de exploración — tus inversiones vigentes están en el Dashboard.</div></div></div>
     </div>
 
     <!-- Monto a invertir -->
@@ -493,7 +504,6 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
       <div class="section-body" id="creditQuality"></div>
     </div>
     </div>
-  </div>
 </section>
 
 <!-- ==================== TAB: INVERSIONES ACTUALES ==================== -->
@@ -1194,93 +1204,93 @@ function renderCartera(){
   const el=document.getElementById("carteraResumen"); if(!el) return;
   /* Paleta categórica azul marino: un color por fondo/posición. */
   const FUND_PALETTE=["#1E2F4D","#2E5A88","#3E7CA6","#5E7CA6","#274060","#4A7BA0","#6E86AD","#38506E","#2E6B7A","#7E8CA0"];
-  const now=new Date(), year=now.getFullYear(), month=now.getMonth();
-  const m0=new Date(year,month,1).getTime(), m1=new Date(year,month+1,1).getTime();
+  const MM=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  /* Fecha "as-of" (GIPS): la cartera se reporta a una fecha concreta. Por defecto,
+     el mes en curso. Cambiarla muestra solo las posiciones vigentes en ese mes. */
+  if(!STATE.asOf) STATE.asOf = mesActualISO();
+  const asOf = STATE.asOf;
+  const am = asOf.match(/^(\d{4})-(\d{2})/);
+  const aY = am?+am[1]:new Date().getFullYear(), aMo = am?+am[2]-1:new Date().getMonth();
+  const m0=new Date(aY,aMo,1).getTime(), m1=new Date(aY,aMo+1,1).getTime();
+  const mesLabel = MM[aMo]+" "+aY;
+
   const items=[];
-  /* FFMM: capital = saldo actual; ganancia del mes = gananciaMes (saldos reales). */
-  try{ agruparPorFondo().forEach(g=>{ if(g.saldoActual>0) items.push({tipo:"FFMM", label:g.fondo||g.agf||"Fondo", sub:g.agf||"", capital:g.saldoActual, gMes:g.gananciaMes||0}); }); }catch(e){}
-  /* DAP: capital = monto; ganancia del mes = interés devengado dentro del mes. */
-  (STATE.daps||[]).forEach(d=>{ const m=dapMetrics(d); if(m.P>0) items.push({tipo:"DAP", label:d.banco||"Depósito a plazo", sub:(m.dias||0)+" días", capital:m.P, gMes:dapDevengadoEnRango(d,m0,m1)}); });
-  /* Préstamos: capital = monto; ganancia del mes = interés de cuotas del mes. */
-  (STATE.loans||[]).forEach(l=>{ const m=loanMetrics(l); if(m.P>0) items.push({tipo:"Préstamo", label:l.contraparte||"Préstamo", sub:(m.n||0)+" meses", capital:m.P, gMes:loanInteresRango(l,m0,m1)}); });
+  /* FFMM: posición vigente = registro de ESE mes con saldo. Rentó = TWR del mes. */
+  const gk={};
+  (STATE.holdings||[]).forEach(h=>{ if(!(h.fondo||h.agf))return; const k=h.agf+"|"+h.fondo+"|"+h.serie; (gk[k]||(gk[k]=[])).push(h); });
+  Object.values(gk).forEach(arr=>{
+    const rec=arr.find(h=>String(h.mes)===asOf); if(!rec)return;
+    const c=recCalc(rec); const invertido=c.sf>0?c.sf:(c.si+c.ap-c.re);
+    if(invertido>0) items.push({tipo:"FFMM", label:rec.fondo||rec.agf||"Fondo", sub:rec.agf||"", capital:invertido, rentMes:c.rent, enCurso:c.enCurso});
+  });
+  /* DAP: vigente si el depósito está activo durante el mes as-of. */
+  (STATE.daps||[]).forEach(d=>{ const m=dapMetrics(d); if(!(m.P>0))return;
+    const ini=d.fecha?new Date(d.fecha).getTime():null, fin=m.fin||null;
+    const vigente = ini!=null && ini < m1 && (fin==null || fin >= m0);
+    if(vigente){ const dev=dapDevengadoEnRango(d,m0,m1); items.push({tipo:"DAP", label:d.banco||"Depósito a plazo", sub:(m.dias||0)+" días", capital:m.P, rentMes:m.P>0?dev/m.P:null}); }
+  });
+  /* Préstamos: vigente si está dentro del plazo en el mes as-of. */
+  (STATE.loans||[]).forEach(l=>{ const m=loanMetrics(l); if(!(m.P>0))return;
+    const ini=l.fecha?new Date(l.fecha).getTime():null; const fin=(ini!=null&&m.n>0)?new Date(new Date(l.fecha).setMonth(new Date(l.fecha).getMonth()+m.n)).getTime():null;
+    const vigente = ini!=null && ini < m1 && (fin==null || fin >= m0);
+    if(vigente){ const intMes=loanInteresRango(l,m0,m1); items.push({tipo:"Préstamo", label:l.contraparte||"Préstamo", sub:(m.n||0)+" meses", capital:m.P, rentMes:m.P>0?intMes/m.P:null}); }
+  });
+
+  /* Control de fecha (siempre visible, aunque no haya posiciones vigentes). */
+  const dateControl=`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:10px 14px;background:var(--surface);border:1px solid var(--rule)">
+    <span style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.09em;font-size:10px;color:var(--ink-muted);font-weight:600">Cartera vigente a</span>
+    <input type="month" id="asOfDate" value="${asOf}" style="font-family:var(--font-ui);font-size:13px;padding:4px 8px;border:1.5px solid var(--navy);background:var(--cream)">
+    <span style="font-size:11.5px;color:var(--ink-subtle);font-family:var(--font-serif);font-style:italic">Muestra solo lo que estaba invertido al cierre de ese mes — no toda la cartera histórica (evita sobreestimar lo invertido, según GIPS).</span>
+  </div>`;
 
   if(!items.length){
-    el.innerHTML='<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0">Aún no registras posiciones. Agrega fondos en <strong>Inversiones actuales FFMM</strong>, depósitos en <strong>Inversiones DAP</strong> o préstamos en <strong>Préstamos a relacionadas</strong>, y aquí verás el resumen consolidado.</p>';
-    return;
+    el.innerHTML=dateControl+`<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0">No hay posiciones vigentes en <strong>${mesLabel}</strong>. Prueba otro mes, o registra posiciones en Inversiones FFMM / DAP / Préstamos.</p>`;
+    bindAsOf(); renderMensualMatriz(); return;
   }
   items.sort((a,b)=>b.capital-a.capital);
   items.forEach((i,idx)=>{ i.color=fundColor(i.label)||FUND_PALETTE[idx%FUND_PALETTE.length]; });
   const totalCap=items.reduce((a,i)=>a+i.capital,0);
-  const totalMes=items.reduce((a,i)=>a+(i.gMes||0),0);
-  const rentMes = totalCap>0 ? totalMes/totalCap : null;
+  // Renta $ del mes = rentMes% × capital (referencial)
+  const totalMes=items.reduce((a,i)=>a+((i.rentMes!=null?i.rentMes:0)*i.capital),0);
+  const rentMesPct = totalCap>0 ? totalMes/totalCap : null;
 
-  /* Barras horizontales (ranking por participación) + tabla: más legible que la torta
-     porque los 7 fondos —incluidos los pequeños— comparten el mismo formato de %. */
-  const legendRows=items.map(i=>{ const pct=totalCap>0?i.capital/totalCap*100:0; const gCol=(i.gMes||0)>=0?"#2E6B52":"#B03A3A";
-    return `<div style="display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--rule)">
-      <span style="width:12px;height:12px;border-radius:2px;background:${i.color};flex:none"></span>
-      <span class="trunc" style="flex:1;min-width:0;font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(i.label)}">${escHtml(i.label)}</span>
-      <span class="num" style="font-size:12.5px;font-weight:600;white-space:nowrap">${fmtCLP(i.capital)}</span>
-      <span class="num" style="width:110px;text-align:right;font-size:12px;font-weight:600;color:${gCol}">${(i.gMes||0)!==0?((i.gMes>0?"+":"")+fmtCLP(i.gMes)):DASH}</span>
-    </div>`; }).join("");
-  const barRows=items.map(i=>{ const pct=totalCap>0?i.capital/totalCap*100:0;
-    return `<div style="display:grid;grid-template-columns:150px 1fr 52px;gap:10px;align-items:center;padding:5px 0">
-      <span class="trunc" style="min-width:0;font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(i.label)}">${escHtml(i.label)}</span>
-      <span style="position:relative;height:16px;background:var(--rule);border-radius:2px;overflow:hidden" title="${nf2.format(pct)}% del total"><span style="position:absolute;inset:0 auto 0 0;width:${pct.toFixed(1)}%;background:${i.color};border-radius:2px"></span></span>
-      <span class="num" style="text-align:right;font-size:12px;font-weight:700;color:var(--navy)">${nf2.format(pct)}%</span>
-    </div>`; }).join("");
-  const pieBlock=`<div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:18px">
-    <div style="flex:1;min-width:300px">
-      <div style="font-size:10.5px;color:var(--ink-subtle);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Cartera por fondo · 2026 — participación (sobre 100%)</div>
-      ${barRows}
-      <div style="display:grid;grid-template-columns:150px 1fr 52px;gap:10px;align-items:center;padding:7px 0 0;border-top:1px solid var(--rule);margin-top:4px;font-weight:700">
-        <span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted)">Total</span>
-        <span></span>
-        <span class="num" style="text-align:right;font-size:12px;color:var(--navy)">100%</span>
-      </div>
-    </div>
-    <div style="flex:1;min-width:340px">
-      <div style="display:flex;align-items:center;gap:9px;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-muted);font-family:var(--font-label);padding-bottom:5px;border-bottom:1.5px solid var(--rule)"><span style="width:12px;flex:none"></span><span style="flex:1">Fondo</span><span>Invertido</span><span style="width:110px;text-align:right">Rentó ${mesActualNombre()}</span></div>
-      ${legendRows}
-    </div>
-  </div>`;
-
-  /* Filas: color, nombre, % del total, capital, ganancia del mes ($ y %). */
+  /* Tabla compacta: nombre (una sola vez), invertido, rentó a fin del mes, y la
+     barra al lado — ancho = participación real sobre el total (mayor a menor). */
+  const maxPct = totalCap>0 ? items[0].capital/totalCap*100 : 100;
   const rows=items.map(i=>{
-    const pctCartera=totalCap>0?(i.capital/totalCap*100):0;
-    const rMes=i.capital>0?(i.gMes||0)/i.capital*100:null;
-    const gCol=(i.gMes||0)>=0?"#2E6B52":"#B03A3A";
-    return `<div style="display:grid;grid-template-columns:1fr 120px 150px 150px;gap:14px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)">
-      <div style="min-width:0">
-        <div style="display:flex;align-items:center;gap:8px"><span style="width:11px;height:11px;border-radius:2px;background:${i.color};flex:none"></span><span class="trunc" style="font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(i.label)}">${escHtml(i.label)}</span></div>
-        <div style="font-size:11px;color:var(--ink-subtle);margin-left:19px;font-family:var(--font-serif)">${escHtml(i.tipo)}${i.sub?" · "+escHtml(i.sub):""}</div>
-      </div>
-      <div style="text-align:right"><div class="num" style="font-size:14px;font-weight:700;color:var(--navy)">${nf2.format(pctCartera)}%</div><div style="font-size:10px;color:var(--ink-subtle);text-transform:uppercase;letter-spacing:.06em">del total</div></div>
-      <div style="text-align:right"><span class="num" style="font-size:12.5px;font-weight:600;white-space:nowrap">${fmtCLP(i.capital)}</span></div>
-      <div style="text-align:right">
-        <div class="num" style="font-size:12.5px;font-weight:600;color:${gCol}">${(i.gMes||0)!==0?((i.gMes>0?"+":"")+fmtCLP(i.gMes)):DASH}</div>
-        <div style="font-size:10.5px;color:var(--ink-subtle)">${rMes!=null&&i.gMes!==0?nf2.format(rMes)+"% mes":"—"}</div>
+    const pct=totalCap>0?i.capital/totalCap*100:0;
+    const rCol=(i.rentMes!=null&&i.rentMes>=0)?"#2E6B52":"#B03A3A";
+    const rTxt = i.enCurso?`<span style="color:var(--ink-subtle);font-style:italic;font-size:11px">en curso</span>`
+      : (i.rentMes==null?DASH:`<span style="color:${rCol};font-weight:600">${i.rentMes>=0?"+":""}${nf2.format(i.rentMes*100)}%</span>`);
+    return `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px 92px minmax(0,1.4fr);gap:14px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule)">
+      <div style="min-width:0;display:flex;align-items:center;gap:8px"><span style="width:11px;height:11px;border-radius:2px;background:${i.color};flex:none"></span><span class="trunc" style="font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(i.label)}">${escHtml(i.label)}</span><span style="font-size:9.5px;color:var(--ink-subtle);text-transform:uppercase;letter-spacing:.05em;flex:none">${escHtml(i.tipo)}</span></div>
+      <div class="num" style="text-align:right;font-size:12.5px;font-weight:600;white-space:nowrap">${fmtCLP(i.capital)}</div>
+      <div style="text-align:right;font-size:12px">${rTxt}</div>
+      <div style="display:flex;align-items:center;gap:8px" title="${nf2.format(pct)}% del total">
+        <span style="position:relative;flex:1;height:15px;background:var(--rule);border-radius:2px;overflow:hidden"><span style="position:absolute;inset:0 auto 0 0;width:${pct.toFixed(1)}%;background:${i.color};border-radius:2px"></span></span>
+        <span class="num" style="width:46px;text-align:right;font-size:11.5px;font-weight:700;color:var(--navy)">${nf2.format(pct)}%</span>
       </div>
     </div>`;
   }).join("");
 
-  const rentCol=(rentMes||0)>=0?"#2E6B52":"#B03A3A";
+  const rentCol=(rentMesPct||0)>=0?"#2E6B52":"#B03A3A";
   el.innerHTML=
-    /* KPIs destacados: total invertido, renta del mes $ y % */
+    dateControl+
     `<div class="summary-grid" style="margin-bottom:18px">`+
-      `<div class="summary-cell"><div class="s-label">Total invertido</div><div class="s-val num">${fmtCLP(totalCap)}</div></div>`+
-      `<div class="summary-cell"><div class="s-label">Rentó en ${mesActualNombre()} ($)</div><div class="s-val num" style="color:${rentCol}">${totalMes!==0?((totalMes>0?"+":"")+fmtCLP(totalMes)):DASH}</div></div>`+
-      `<div class="summary-cell"><div class="s-label">Rentabilidad de ${mesActualNombre()} (%)</div><div class="s-val num" style="color:${rentCol}">${rentMes!=null&&totalMes!==0?(rentMes>0?"+":"")+nf2.format(rentMes*100)+"%":DASH}</div></div>`+
-      `<div class="summary-cell"><div class="s-label">N° de posiciones</div><div class="s-val num">${fmtInt(items.length)}</div></div>`+
+      `<div class="summary-cell"><div class="s-label">Invertido a ${mesLabel}</div><div class="s-val num">${fmtCLP(totalCap)}</div></div>`+
+      `<div class="summary-cell"><div class="s-label">Rentó en ${mesLabel} ($)</div><div class="s-val num" style="color:${rentCol}">${totalMes!==0?((totalMes>0?"+":"")+fmtCLP(totalMes)):DASH}</div></div>`+
+      `<div class="summary-cell"><div class="s-label">Rentabilidad de ${mesLabel} (%)</div><div class="s-val num" style="color:${rentCol}">${rentMesPct!=null&&totalMes!==0?(rentMesPct>0?"+":"")+nf2.format(rentMesPct*100)+"%":DASH}</div></div>`+
+      `<div class="summary-cell"><div class="s-label">N° de posiciones vigentes</div><div class="s-val num">${fmtInt(items.length)}</div></div>`+
     `</div>`+
-    /* Consolidado: gráfico de torta con el peso y la renta de cada fondo */
-    `<div class="s-label" style="margin-bottom:10px">Cuánto hay invertido en cada fondo y cuánto rentó — inversiones 2026</div>`+
-    pieBlock+
-    `<div style="display:grid;grid-template-columns:1fr 120px 150px 150px;gap:14px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-muted);font-family:var(--font-label);padding-bottom:6px;border-bottom:1.5px solid var(--rule);margin-top:6px"><span>Fondo / posición</span><span style="text-align:right">% del total</span><span style="text-align:right">Monto invertido</span><span style="text-align:right">Rentó en ${mesActualNombre()}</span></div>`+
+    `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px 92px minmax(0,1.4fr);gap:14px;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-muted);font-family:var(--font-label);padding-bottom:6px;border-bottom:1.5px solid var(--rule)"><span>Fondo / posición</span><span style="text-align:right">Invertido</span><span style="text-align:right">Rentó</span><span style="text-align:right">Participación</span></div>`+
     rows+
-    `<p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">La renta del mes viene de tus saldos reales (FFMM), del interés devengado del mes (DAP) y de las cuotas del mes (préstamos). Es referencial y no descuenta comisiones ni impuestos.</p>`;
+    `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px 92px minmax(0,1.4fr);gap:14px;align-items:center;padding:8px 0 0;border-top:2px solid var(--rule);margin-top:2px;font-weight:700"><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted)">Total</span><span class="num" style="text-align:right;font-size:12.5px">${fmtCLP(totalCap)}</span><span></span><span class="num" style="text-align:right;font-size:11.5px;color:var(--navy)">100%</span></div>`+
+    `<p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">"Rentó" es la rentabilidad temporalmente ponderada (TWR) del mes seleccionado según GIPS. La barra muestra la participación real de cada posición sobre el total invertido a esa fecha. Referencial: no descuenta comisiones ni impuestos.</p>`;
+  bindAsOf();
   renderMensualMatriz();
 }
+/* Enlaza el selector de fecha as-of del dashboard. */
+function bindAsOf(){ const inp=document.getElementById("asOfDate"); if(inp&&!inp._bound){ inp._bound=true; inp.addEventListener("change",e=>{ STATE.asOf=e.target.value||mesActualISO(); renderCartera(); }); } }
 
 /* Matriz portada: rentabilidad de cada fondo (FFMM) en cada mes del año en curso
    y la ganancia total generada cada mes. La celda muestra la rentabilidad % del
@@ -1545,10 +1555,10 @@ function hoyISO(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return d.g
 const PERSIST = {
   inversiones: {
     hoja: "Inversiones",
-    fields: ["agf","fondo","serie","mes","saldoIni","aportes","retiros","saldoFin","cuotaIni","cuotaFin","cuotaRet","aportesDet","retirosDet"],
-    toRow: h => ({ agf:h.agf, fondo:h.fondo, serie:h.serie, mes:h.mes, saldoIni:h.saldoIni, aportes:h.aportes, retiros:h.retiros, saldoFin:h.saldoFin, cuotaIni:h.cuotaIni, cuotaFin:h.cuotaFin, cuotaRet:h.cuotaRet, aportesDet:(h.aportesDet&&h.aportesDet.length)?JSON.stringify(h.aportesDet):"", retirosDet:(h.retirosDet&&h.retirosDet.length)?JSON.stringify(h.retirosDet):"" }),
+    fields: ["agf","fondo","serie","mes","saldoIni","aportes","retiros","saldoFin","cuotaIni","cuotaFin","nCuotaI","nCuotaF","cuotaRet","aportesDet","retirosDet"],
+    toRow: h => ({ agf:h.agf, fondo:h.fondo, serie:h.serie, mes:h.mes, saldoIni:h.saldoIni, aportes:h.aportes, retiros:h.retiros, saldoFin:h.saldoFin, cuotaIni:h.cuotaIni, cuotaFin:h.cuotaFin, nCuotaI:h.nCuotaI, nCuotaF:h.nCuotaF, cuotaRet:h.cuotaRet, aportesDet:(h.aportesDet&&h.aportesDet.length)?JSON.stringify(h.aportesDet):"", retirosDet:(h.retirosDet&&h.retirosDet.length)?JSON.stringify(h.retirosDet):"" }),
     fromRow: r => { let det=[],detR=[]; try{ if(r.aportesDet&&String(r.aportesDet).trim()) det=JSON.parse(r.aportesDet); }catch(e){} try{ if(r.retirosDet&&String(r.retirosDet).trim()) detR=JSON.parse(r.retirosDet); }catch(e){}
-      return { id:++STATE.holdSeq, agf:r.agf||"", fondo:r.fondo||"", serie:r.serie!=null?String(r.serie):"", mes:normMes(r.mes), saldoIni:toNum(r.saldoIni)||0, aportes:toNum(r.aportes)||0, retiros:toNum(r.retiros)||0, saldoFin:toNum(r.saldoFin)||0, cuotaIni:r.cuotaIni!=null?r.cuotaIni:"", cuotaFin:r.cuotaFin!=null?r.cuotaFin:"", cuotaRet:r.cuotaRet!=null?r.cuotaRet:"", aportesDet:Array.isArray(det)?det:[], retirosDet:Array.isArray(detR)?detR:[] }; },
+      return { id:++STATE.holdSeq, agf:r.agf||"", fondo:r.fondo||"", serie:r.serie!=null?String(r.serie):"", mes:normMes(r.mes), saldoIni:toNum(r.saldoIni)||0, aportes:toNum(r.aportes)||0, retiros:toNum(r.retiros)||0, saldoFin:toNum(r.saldoFin)||0, cuotaIni:r.cuotaIni!=null?r.cuotaIni:"", cuotaFin:r.cuotaFin!=null?r.cuotaFin:"", nCuotaI:r.nCuotaI!=null?r.nCuotaI:"", nCuotaF:r.nCuotaF!=null?r.nCuotaF:"", cuotaRet:r.cuotaRet!=null?r.cuotaRet:"", aportesDet:Array.isArray(det)?det:[], retirosDet:Array.isArray(detR)?detR:[] }; },
     target: rows => { STATE.holdings = rows; },
     render: () => renderInversiones()
   },
@@ -1643,15 +1653,42 @@ function aportesDetTotal(h){ return (h.aportesDet||[]).reduce((a,x)=>a+(toNum(x.
 function retirosDetTotal(h){ return (h.retirosDet||[]).reduce((a,x)=>a+(toNum(x.monto)||0),0); }
 /* Cálculo por registro mensual (método Dietz: flujos al medio del mes).
    Si hay aportes/retiros detallados, el total proviene de ellos. */
+/* Cuadratura N° cuotas × valor cuota vs. saldo (corroboración de datos FFMM).
+   Tolerancia 0,5% para redondeos de valor cuota. */
+function cuadraturaHTML(h){
+  const chk=(label,nc,vc,saldo)=>{
+    const n=toNum(nc), v=toNum(vc), s=toNum(saldo)||0;
+    if(!(n>0&&v>0)) return `<span style="color:var(--ink-subtle)">${label}: falta N° cuotas o valor cuota</span>`;
+    const calc=n*v, diff=s>0?Math.abs(calc-s)/s:1;
+    const ok=s>0&&diff<=0.005;
+    const col=ok?"#2E6B52":(s>0?"#B03A3A":"var(--ink-muted)");
+    const mark=ok?"✓":(s>0?"⚠":"·");
+    return `<span style="color:${col}"><strong>${mark} ${label}:</strong> ${fmtCLP(calc)}${s>0?` vs saldo ${fmtCLP(s)}${ok?"":` (dif ${nf2.format(diff*100)}%)`}`:""}</span>`;
+  };
+  return `<div class="cuadra-box" style="display:flex;gap:22px;flex-wrap:wrap;margin-top:10px;padding:8px 12px;background:var(--surface);border:1px solid var(--rule);font-size:11.5px;font-family:var(--font-serif)">
+    <span style="text-transform:uppercase;letter-spacing:.08em;font-size:9.5px;color:var(--ink-muted);font-family:var(--font-label);align-self:center">Cuadratura</span>
+    ${chk("Inicio",h.nCuotaI,h.cuotaIni,h.saldoIni)}
+    ${chk("Fin",h.nCuotaF,h.cuotaFin,h.saldoFin)}
+  </div>`;
+}
+
+/* recCalc — rentabilidad del mes según GIPS (temporalmente ponderada / TWR).
+   Preferencia GIPS: cuando hay valor cuota de inicio y de fin, el retorno del
+   subperíodo es (cuotaFin/cuotaIni − 1). El valor cuota (NAV por unidad) ya
+   descuenta el efecto de aportes y retiros, que es exactamente lo que exige la
+   rentabilidad temporalmente ponderada. Sin valor cuota, se aproxima con Dietz
+   modificado (ganancia ÷ capital medio ponderado por flujos). El encadenamiento
+   geométrico de los meses se hace en agruparPorFondo (∏(1+r)−1). */
 function recCalc(h){ const apDet=aportesDetTotal(h), reDet=retirosDetTotal(h);
   const si=+h.saldoIni||0, ap=(h.aportesDet&&h.aportesDet.length)?apDet:(+h.aportes||0), re=(h.retirosDet&&h.retirosDet.length)?reDet:(+h.retiros||0), sf=+h.saldoFin||0;
-  /* Mes en curso sin saldo final cargado: aún no hay período que medir.
-     Se marca "en curso" (ganancia 0, rent null) para no reportar un −100% falso
-     ni contaminar la rentabilidad acumulada/anual. Al ingresar un saldo final
-     real (aunque sea parcial), se calcula y muestra la rentabilidad del período. */
   const enCurso = String(h.mes)===mesActualISO() && sf===0 && (si>0||ap>0);
-  if(enCurso) return {si,ap,re,sf:si+ap-re,ganancia:0,rent:null,enCurso:true};
-  const ganancia=sf-si-ap+re, denom=si+0.5*ap-0.5*re; return {si,ap,re,sf,ganancia,rent:denom>0?ganancia/denom:null,enCurso:false}; }
+  if(enCurso) return {si,ap,re,sf:si+ap-re,ganancia:0,rent:null,rentMethod:null,enCurso:true};
+  const ganancia=sf-si-ap+re, denom=si+0.5*ap-0.5*re;
+  const ci=toNum(h.cuotaIni), cf=toNum(h.cuotaFin);
+  let rent=null, rentMethod=null;
+  if(ci>0&&cf>0){ rent=cf/ci-1; rentMethod="twr"; }          // TWR exacto por valor cuota (GIPS)
+  else if(denom>0){ rent=ganancia/denom; rentMethod="dietz"; } // aproximación Dietz modificado
+  return {si,ap,re,sf,ganancia,rent,rentMethod,enCurso:false}; }
 
 function renderInversiones(){
   const head=document.getElementById("holdHead"), body=document.getElementById("holdBody");
@@ -1717,7 +1754,10 @@ function renderInversiones(){
         ${fld("Retiros del mes",`<input type="text" inputmode="numeric" class="h-re num" style="text-align:right" placeholder="$0" value="${retirosDetTotal(h)?nfInt.format(retirosDetTotal(h)):""}" disabled title="Suma automática del detalle de retiros">`)}
         ${fld("V. cuota inicio",`<input type="text" class="h-cuotaI num" style="text-align:right" placeholder="—" value="${h.cuotaIni!=null?String(h.cuotaIni):""}">`)}
         ${fld("V. cuota fin",`<input type="text" class="h-cuotaF num" style="text-align:right" placeholder="—" value="${h.cuotaFin!=null?String(h.cuotaFin):""}">`)}
+        ${fld("N° cuotas inicio",`<input type="text" class="h-nCuotaI num" style="text-align:right" placeholder="—" value="${h.nCuotaI!=null?String(h.nCuotaI):""}" title="Número de cuotas/unidades al inicio del mes">`)}
+        ${fld("N° cuotas fin",`<input type="text" class="h-nCuotaF num" style="text-align:right" placeholder="—" value="${h.nCuotaF!=null?String(h.nCuotaF):""}" title="Número de cuotas/unidades al fin del mes">`)}
       </div>
+      ${cuadraturaHTML(h)}
       <div style="display:flex;gap:26px;flex-wrap:wrap">
         ${subTbl("Aportes del mes — cada uno con su valor cuota","ap",apRows,aportesDetTotal(h),"ad-add")}
         ${subTbl("Retiros del mes — cada uno con su valor cuota","re",reRows,retirosDetTotal(h),"rd-add")}
@@ -1745,8 +1785,12 @@ function renderInversiones(){
     pr.querySelector(".h-mes").addEventListener("change",e=>{ h.mes=e.target.value; refreshCalc(id); });
     const money=(sel,prop)=>{ const el=pr.querySelector(sel); if(el&&!el.disabled) el.addEventListener("input",ev=>{ h[prop]=parseMiles(ev.target.value); ev.target.value=h[prop]?nfInt.format(h[prop]):""; refreshCalc(id); }); };
     money(".h-si","saldoIni"); money(".h-sf","saldoFin");
-    pr.querySelector(".h-cuotaI").addEventListener("input",e=>{ h.cuotaIni=e.target.value; });
-    pr.querySelector(".h-cuotaF").addEventListener("input",e=>{ h.cuotaFin=e.target.value; });
+    const updCuadra=()=>{ const box=pr.querySelector(".cuadra-box"); if(box) box.outerHTML=cuadraturaHTML(h); refreshCalc(id); };
+    pr.querySelector(".h-cuotaI").addEventListener("input",e=>{ h.cuotaIni=e.target.value; updCuadra(); });
+    pr.querySelector(".h-cuotaF").addEventListener("input",e=>{ h.cuotaFin=e.target.value; updCuadra(); });
+    const nci=pr.querySelector(".h-nCuotaI"), ncf=pr.querySelector(".h-nCuotaF");
+    if(nci) nci.addEventListener("input",e=>{ h.nCuotaI=e.target.value; updCuadra(); });
+    if(ncf) ncf.addEventListener("input",e=>{ h.nCuotaF=e.target.value; updCuadra(); });
     // Sub-filas de aportes
     pr.querySelectorAll("tbody tr[data-di]").forEach(dr=>{
       const di=+dr.dataset.di;
@@ -1790,11 +1834,11 @@ function agruparPorFondo(){
   const curMes=mesActualISO(), curYear=String(new Date().getFullYear());
   return Object.values(g).map(x=>{
     x.meses.sort((a,b)=>String(a.mes||"").localeCompare(String(b.mes||"")));
-    let gTotal=0,gAno=0,gMes=0,ap=0,re=0,acum=1,acumYear=1,tieneRent=false;
+    let gTotal=0,gAno=0,gMes=0,ap=0,re=0,acum=1,acumYear=1,tieneRent=false,nPer=0;
     x.meses.forEach(h=>{ const c=recCalc(h); gTotal+=c.ganancia; ap+=c.ap; re+=c.re;
       if(String(h.mes)===curMes) gMes+=c.ganancia;
       if(String(h.mes||"").slice(0,4)===curYear){ gAno+=c.ganancia; if(c.rent!=null) acumYear*=(1+c.rent); }
-      if(c.rent!=null){ acum*=(1+c.rent); tieneRent=true; }
+      if(c.rent!=null){ acum*=(1+c.rent); tieneRent=true; nPer++; }
     });
     /* Saldo actual = último saldo final real; si el último mes está en curso
        (saldo final en blanco) usa su saldo provisional (inicial+aportes−retiros)
@@ -1804,6 +1848,9 @@ function agruparPorFondo(){
     x.saldoActual=saldoActual;
     x.aportes=ap; x.retiros=re; x.gananciaTotal=gTotal; x.gananciaAno=gAno; x.gananciaMes=gMes;
     x.rentAcum=tieneRent?acum-1:null; x.rentAno=acumYear-1;
+    /* Anualización GIPS: acumulada si <12 meses; (1+acum)^(12/n)−1 si ≥12. */
+    x.nPeriodos=nPer;
+    x.rentAnual=(tieneRent&&nPer>0)?(nPer>=12?Math.pow(acum,12/nPer)-1:acum-1):null;
     x.rent=x.f?toNum(x.f.Rent365d):null;
     // aliases usados por renderCartera
     x.capitalNeto=x.saldoActual; x.interes=x.gananciaTotal; x.rentEfect=x.rentAcum;
@@ -1811,7 +1858,7 @@ function agruparPorFondo(){
   });
 }
 
-const BYFUND_COLS=["Fondo","AGF","Serie","Saldo actual","Aportes","Retiros","Ganancia año","Ganancia mes","Ganancia total","Rentab. acum. %"];
+const BYFUND_COLS=["Fondo","AGF","Serie","Saldo actual","Aportes","Retiros","Ganancia año","Ganancia mes","Ganancia total","Rentab. acum. (TWR)","Rentab. anualizada"];
 function renderByFund(){
   const head=document.getElementById("byFundHead"), body=document.getElementById("byFundBody"); if(!head)return;
   head.innerHTML="<tr>"+BYFUND_COLS.map((h,i)=>`<th class="${i>=3?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
@@ -1829,6 +1876,7 @@ function renderByFund(){
     <td class="right num"><span style="color:${col(g.gananciaMes)}">${g.gananciaMes?fmtCLP(g.gananciaMes):DASH}</span></td>
     <td class="right num" style="font-weight:600"><span style="color:${col(g.gananciaTotal)}">${g.gananciaTotal?fmtCLP(g.gananciaTotal):DASH}</span></td>
     <td class="right num">${g.rentAcum===null?DASH:nf2.format(g.rentAcum*100)+"%"}</td>
+    <td class="right num" title="${g.nPeriodos>=12?'Anualizada (GIPS)':'Acumulada — aún &lt;12 meses'}">${g.rentAnual===null?DASH:nf2.format(g.rentAnual*100)+"%"+(g.nPeriodos>=12?"":" *")}</td>
   </tr>`).join("");
 }
 
@@ -1859,7 +1907,7 @@ function renderHoldSummary(){
     const entries=Object.entries(porAgf).sort((a,b)=>b[1]-a[1]); const pal=CLASIF_PALETTE;
     bar=`<div class="stacked" style="margin-bottom:14px">`+entries.map(([a,v],i)=>`<div class="seg" style="width:${(v/saldoActual*100).toFixed(2)}%;background:${pal[i%pal.length]}" title="${escAttr(a)}: ${fmtCLP(v)}">${(v/saldoActual*100)>=9?escHtml(a):""}</div>`).join("")+`</div><div class="stacked-legend" style="margin-bottom:16px">`+entries.map(([a,v],i)=>`<span class="li"><span class="sq" style="background:${pal[i%pal.length]}"></span>${escHtml(a)} — <strong>${fmtCLP(v)}</strong></span>`).join("")+`</div>`;
   }
-  el.innerHTML=(saldoActual>0?bar:'<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0 0 14px">Ingresa saldos y flujos por mes para ver los resultados.</p>')+`<div class="summary-grid">`+cells.map(c=>`<div class="summary-cell"><div class="s-label">${c.l}</div><div class="s-val num">${c.v}</div></div>`).join("")+`</div><p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">La rentabilidad se calcula con los saldos y flujos reales que registras (método Dietz: ganancia ÷ saldo inicial más flujos ponderados). No usa la Rent365d histórica.</p>`;
+  el.innerHTML=(saldoActual>0?bar:'<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0 0 14px">Ingresa saldos y flujos por mes para ver los resultados.</p>')+`<div class="summary-grid">`+cells.map(c=>`<div class="summary-cell"><div class="s-label">${c.l}</div><div class="s-val num">${c.v}</div></div>`).join("")+`</div><p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">Rentabilidad <strong>temporalmente ponderada (TWR)</strong> según normas GIPS: cuando hay valor cuota de inicio y fin, el retorno de cada mes es (cuota fin ÷ cuota inicio − 1); si no, se aproxima con Dietz modificado. Los meses se encadenan geométricamente (∏(1+r)−1), no se suman. Es referencial y no descuenta comisiones ni impuestos.</p>`;
   renderCuotaChart();
 }
 
@@ -2118,14 +2166,32 @@ function amortizacion(loan){
   return { filas, totalInteres, cuota:cuotaFija, totalPagado };
 }
 
+/* Devuelve las filas de la tabla usando las ediciones del usuario (l.amortEdit)
+   si existen; recalcula el saldo corriendo (saldo anterior − amortización). */
+function loanSchedule(loan){
+  const P=toNum(loan.monto)||0;
+  const base=(Array.isArray(loan.amortEdit)&&loan.amortEdit.length)?loan.amortEdit:amortizacion(loan).filas;
+  let saldo=P;
+  return base.map((f,idx)=>{ const cuota=toNum(f.cuota)||0, interes=toNum(f.interes)||0, amort=toNum(f.amort)||0;
+    saldo=saldo-amort; return {k:f.k!=null?f.k:idx+1,cuota,interes,amort,saldo:Math.max(0,saldo)}; });
+}
+
 /* Métricas de rentabilidad de un préstamo. */
 function loanMetrics(loan){
   const a=amortizacion(loan);
   const P=toNum(loan.monto)||0, n=Math.max(0,Math.round(toNum(loan.plazo)||0)), tasaMensual=toNum(loan.tasa)||0;
-  const rentPeriodo = P>0 ? a.totalInteres/P : null;          // interés total / capital
+  /* Si el usuario editó la tabla, el interés total sale de la tabla editada. */
+  let totalInteres=a.totalInteres, cuota=a.cuota;
+  if(Array.isArray(loan.amortEdit)&&loan.amortEdit.length){
+    const filas=loanSchedule(loan);
+    totalInteres=filas.reduce((s,f)=>s+(toNum(f.interes)||0),0);
+    const cuotas=filas.map(f=>Math.round(toNum(f.cuota)||0)), uniq=[...new Set(cuotas)];
+    cuota=(uniq.length===1)?cuotas[0]:null;
+  }
+  const rentPeriodo = P>0 ? totalInteres/P : null;          // interés total / capital
   const rentAnualizada = (P>0&&n>0) ? rentPeriodo*(12/n) : null; // llevada a base anual
   const rentMensual = (P>0&&n>0) ? rentPeriodo*(1/n) : null;   // por mes (promedio)
-  return { ...a, P, n, tasaMensual, rentPeriodo, rentAnualizada, rentMensual };
+  return { ...a, totalInteres, cuota, P, n, tasaMensual, rentPeriodo, rentAnualizada, rentMensual };
 }
 
 const LOAN_COLS=["Contraparte","Fecha","Monto (CLP)","Tasa mensual","Plazo","Sistema","Cuota estim.","Interés total","Rentab. período","Rentab. mensual",""];
@@ -2153,11 +2219,23 @@ function renderPrestamos(){
     let filaAmort="";
     if(STATE.loanExpanded[l.id]){
       const a=amortizacion(l);
-      const rows=a.filas.map(f=>`<tr><td style="text-align:right">${f.k}</td><td style="text-align:right">${fmtCLP(f.cuota)}</td><td style="text-align:right">${fmtCLP(f.interes)}</td><td style="text-align:right">${fmtCLP(f.amort)}</td><td style="text-align:right">${fmtCLP(f.saldo)}</td></tr>`).join("");
+      // Semilla editable: si no hay ediciones o cambió el n° de períodos, regenerar desde la propuesta.
+      if(!Array.isArray(l.amortEdit)||l.amortEdit.length!==a.filas.length){ l.amortEdit=a.filas.map(f=>({k:f.k,cuota:f.cuota,interes:f.interes,amort:f.amort})); }
+      const filas=loanSchedule(l);
+      const totalCuota=filas.reduce((s,f)=>s+(toNum(f.cuota)||0),0);
+      const totalInt=filas.reduce((s,f)=>s+(toNum(f.interes)||0),0);
+      const totalAmort=filas.reduce((s,f)=>s+(toNum(f.amort)||0),0);
+      const inp=(cls,val)=>`<input type="text" inputmode="numeric" class="${cls} num" style="width:118px;text-align:right;font-size:12px" value="${val!=null&&val!==""?nfInt.format(Math.round(toNum(val)||0)):""}">`;
+      const rows=filas.map((f,idx)=>`<tr data-k="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${f.k}</td><td style="text-align:right">${inp("am-cuota",f.cuota)}</td><td style="text-align:right">${inp("am-interes",f.interes)}</td><td style="text-align:right">${inp("am-amort",f.amort)}</td><td style="text-align:right" class="num am-saldo">${fmtCLP(f.saldo)}</td></tr>`).join("");
+      const cuadraAmort=Math.abs(totalAmort-m.P)<=Math.max(1,m.P*0.001);
       filaAmort=`<tr class="amort-row"><td colspan="${LOAN_COLS.length}" style="background:var(--surface-2);padding:12px 16px">
-        <div style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--ink-muted);margin-bottom:8px">Tabla de amortización — ${escHtml(l.contraparte||"préstamo")} · ${escHtml(LOAN_SISTEMAS[l.sistema])}</div>
-        ${a.filas.length?`<table class="data" style="width:auto;min-width:520px"><thead><tr><th class="right no-sort">Período</th><th class="right no-sort">Cuota</th><th class="right no-sort">Interés</th><th class="right no-sort">Amortización</th><th class="right no-sort">Saldo</th></tr></thead><tbody>${rows}</tbody>
-          <tfoot><tr style="font-weight:600;border-top:2px solid var(--rule)"><td style="text-align:right">Total</td><td style="text-align:right">${fmtCLP(a.totalPagado)}</td><td style="text-align:right">${fmtCLP(a.totalInteres)}</td><td style="text-align:right">${fmtCLP(m.P)}</td><td style="text-align:right">—</td></tr></tfoot></table>`
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+          <div style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--ink-muted)">Tabla de amortización (editable) — ${escHtml(l.contraparte||"préstamo")} · ${escHtml(LOAN_SISTEMAS[l.sistema])}</div>
+          <button class="btn ghost sm l-reset" type="button" title="Descartar ediciones y regenerar la propuesta">↻ Recalcular propuesta</button>
+        </div>
+        ${a.filas.length?`<table class="data" style="width:auto;min-width:560px"><thead><tr><th class="right no-sort">Período</th><th class="right no-sort">Cuota</th><th class="right no-sort">Interés</th><th class="right no-sort">Amortización</th><th class="right no-sort">Saldo</th></tr></thead><tbody>${rows}</tbody>
+          <tfoot><tr style="font-weight:600;border-top:2px solid var(--rule)"><td style="text-align:right">Total</td><td style="text-align:right" class="num">${fmtCLP(totalCuota)}</td><td style="text-align:right" class="num">${fmtCLP(totalInt)}</td><td style="text-align:right" class="num" style="color:${cuadraAmort?'inherit':'#B03A3A'}">${fmtCLP(totalAmort)}</td><td style="text-align:right">—</td></tr></tfoot></table>
+          <p style="font-size:11px;color:var(--ink-subtle);margin-top:8px;font-family:var(--font-serif);font-style:italic">Edita cualquier celda de cuota, interés o amortización; el saldo se recalcula solo (saldo anterior − amortización). ${cuadraAmort?"La amortización cuadra con el capital.":`<span style="color:#B03A3A">La amortización suma ${fmtCLP(totalAmort)} y el capital es ${fmtCLP(m.P)} — revisa las cifras.</span>`}</p>`
           :'<span style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted)">Ingresa monto, tasa y plazo para generar la tabla.</span>'}
       </td></tr>`;
     }
@@ -2169,13 +2247,22 @@ function renderPrestamos(){
     tr.querySelector(".l-contraparte").addEventListener("input",e=>{ l.contraparte=e.target.value; });
     tr.querySelector(".l-fecha").addEventListener("change",e=>{ l.fecha=e.target.value; });
     const monto=tr.querySelector(".l-monto");
-    monto.addEventListener("input",e=>{ l.monto=parseMiles(e.target.value); e.target.value=l.monto?nfInt.format(l.monto):""; refreshLoanRow(id); });
-    tr.querySelector(".l-tasa").addEventListener("input",e=>{ l.tasa=e.target.value===""?0:toNum(e.target.value)||0; });
+    monto.addEventListener("input",e=>{ l.monto=parseMiles(e.target.value); e.target.value=l.monto?nfInt.format(l.monto):""; l.amortEdit=null; refreshLoanRow(id); });
+    tr.querySelector(".l-tasa").addEventListener("input",e=>{ l.tasa=e.target.value===""?0:toNum(e.target.value)||0; l.amortEdit=null; });
     tr.querySelector(".l-tasa").addEventListener("blur",()=>refreshLoanRow(id));
-    tr.querySelector(".l-plazo").addEventListener("input",e=>{ l.plazo=e.target.value===""?0:Math.max(0,Math.round(toNum(e.target.value)||0)); refreshLoanRow(id); });
-    tr.querySelector(".l-sistema").addEventListener("change",e=>{ l.sistema=e.target.value; renderPrestamos(); });
+    tr.querySelector(".l-plazo").addEventListener("input",e=>{ l.plazo=e.target.value===""?0:Math.max(0,Math.round(toNum(e.target.value)||0)); l.amortEdit=null; refreshLoanRow(id); });
+    tr.querySelector(".l-sistema").addEventListener("change",e=>{ l.sistema=e.target.value; l.amortEdit=null; renderPrestamos(); });
     tr.querySelector(".l-amort").addEventListener("click",()=>{ STATE.loanExpanded[id]=!STATE.loanExpanded[id]; renderPrestamos(); });
     tr.querySelector(".l-del").addEventListener("click",()=>removeLoan(id));
+    const amortRow=tr.nextElementSibling;
+    if(amortRow&&amortRow.classList.contains("amort-row")){
+      const reset=amortRow.querySelector(".l-reset"); if(reset) reset.addEventListener("click",()=>{ l.amortEdit=null; renderPrestamos(); });
+      amortRow.querySelectorAll("tr[data-k]").forEach(dr=>{
+        const k=+dr.dataset.k;
+        const bind=(cls,prop)=>{ const el=dr.querySelector(cls); if(!el)return; el.addEventListener("input",e=>{ if(!l.amortEdit||!l.amortEdit[k])return; l.amortEdit[k][prop]=parseMiles(e.target.value); }); el.addEventListener("blur",()=>renderPrestamos()); };
+        bind(".am-cuota","cuota"); bind(".am-interes","interes"); bind(".am-amort","amort");
+      });
+    }
   });
   renderLoanSummary(); renderCartera();
 }
@@ -2601,7 +2688,8 @@ function initNav(){
     if(tab==="prestamos")renderPrestamos();
     if(tab==="dap")renderDap();
     if(tab==="macro")cargarMacroHist(true);
-    if(tab==="dashboard"&&STATE.loaded)drawScatter(getFiltered());
+    if(tab==="dashboard"&&STATE.loaded){ renderCartera(); }
+    if(tab==="explora"&&STATE.loaded){ renderExplorer(getFiltered()); drawScatter(getFiltered()); }
   }));
   document.getElementById("btnAddInv").addEventListener("click",()=>addMov());
   document.getElementById("btnAddLoan").addEventListener("click",addLoan);
@@ -2645,7 +2733,7 @@ function initNav(){
   cap.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); aplicarCapital(); } });
   const btnIng=document.getElementById("btnIngresarCapital");
   if(btnIng) btnIng.addEventListener("click",aplicarCapital);
-  window.addEventListener("resize",()=>{ if(STATE.loaded&&document.getElementById("tab-dashboard").classList.contains("active"))drawScatter(getFiltered()); });
+  window.addEventListener("resize",()=>{ if(STATE.loaded&&document.getElementById("tab-explora").classList.contains("active"))drawScatter(getFiltered()); });
 }
 
 initNav();
