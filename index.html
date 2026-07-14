@@ -689,6 +689,7 @@ const STATE = {
   holdExpanded: {},
   holdExpandedRe: {},
   holdRowOpen: {},
+  holdSort: { key: null, dir: 1 },
   loans: [],
   loanSeq: 0,
   loanExpanded: {},
@@ -1635,6 +1636,7 @@ function mesActualISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d
 function normMes(v){ if(v==null||v==="")return ""; const s=String(v); let m=s.match(/^(\d{4})-(\d{2})/); if(m)return m[1]+"-"+m[2]; const d=new Date(s); if(!isNaN(d))return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); return ""; }
 function addMov(){ const id=++STATE.holdSeq; STATE.holdings.push({id:id,agf:"",fondo:"",serie:"",mes:mesActualISO(),saldoIni:0,aportes:0,retiros:0,saldoFin:0,cuotaIni:"",cuotaFin:"",cuotaRet:"",aportesDet:[],retirosDet:[]}); STATE.holdRowOpen[id]=true; renderInversiones(); }
 function removeHolding(id){ STATE.holdings=STATE.holdings.filter(h=>h.id!==id); delete STATE.holdExpanded[id]; delete STATE.holdExpandedRe[id]; renderInversiones(); }
+function moveHolding(id,dir){ const i=STATE.holdings.findIndex(h=>h.id===id); if(i<0)return; const j=i+dir; if(j<0||j>=STATE.holdings.length)return; const a=STATE.holdings; [a[i],a[j]]=[a[j],a[i]]; renderInversiones(); }
 function clearHoldings(){ STATE.holdings=[]; renderInversiones(); }
 /* Suma de los aportes / retiros detallados (si existen). */
 function aportesDetTotal(h){ return (h.aportesDet||[]).reduce((a,x)=>a+(toNum(x.monto)||0),0); }
@@ -1654,7 +1656,14 @@ function recCalc(h){ const apDet=aportesDetTotal(h), reDet=retirosDetTotal(h);
 function renderInversiones(){
   const head=document.getElementById("holdHead"), body=document.getElementById("holdBody");
   if(!head)return;
-  head.innerHTML="<tr>"+HOLD_COLS.map((h,i)=>`<th class="${i>=4&&i<=6?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
+  const HOLD_SORT_KEYS=["agf","fondo","serie","mes","saldoFin","ganancia","rent",null];
+  const S=STATE.holdSort;
+  head.innerHTML="<tr>"+HOLD_COLS.map((h,i)=>{ const k=HOLD_SORT_KEYS[i]; const right=i>=4&&i<=6;
+    if(!k) return `<th class="no-sort"></th>`;
+    const active=S.key===k; const arrow=active?(S.dir>0?" \u2191":" \u2193"):"";
+    return `<th class="hold-sort no-sort${right?' right':''}" data-key="${k}" style="cursor:pointer;user-select:none;${active?'color:var(--navy);background:var(--cream);':''}" title="Ordenar por ${escAttr(h)}">${escHtml(h)}${arrow}</th>`;
+  }).join("")+"</tr>";
+  head.querySelectorAll(".hold-sort").forEach(th=>th.addEventListener("click",()=>{ const k=th.dataset.key; if(S.key===k){ S.dir=-S.dir; } else { S.key=k; S.dir=1; } renderInversiones(); }));
   if(!STATE.holdings.length){
     if(!STATE.loaded){ body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Cargando datos… o presiona "Agregar registro mensual" para empezar.</td></tr>`; }
     else { body.innerHTML=`<tr><td class="empty-state" colspan="${HOLD_COLS.length}">Aún no hay registros. Usa "Agregar registro mensual" para empezar.</td></tr>`; }
@@ -1664,7 +1673,13 @@ function renderInversiones(){
   const opt=(v,sel)=>`<option value="${escAttr(v)}" ${String(sel)===String(v)?"selected":""}>${escHtml(v)}</option>`;
   const gColor=v=>v>=0?"#2E6B52":"#B03A3A";
   const mesLabel=m=>{ const MM=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]; const x=String(m||"").match(/^(\d{4})-(\d{2})/); return x?MM[+x[2]-1]+" "+x[1]:(m||"—"); };
-  body.innerHTML=STATE.holdings.map(h=>{
+  /* Orden de visualización: por columna si hay orden activo; si no, el manual. */
+  const orderList=STATE.holdings.slice();
+  if(STATE.holdSort.key){ const k=STATE.holdSort.key, dir=STATE.holdSort.dir;
+    const sv=h=>{ if(k==="saldoFin")return +h.saldoFin||0; if(k==="ganancia")return recCalc(h).ganancia||0; if(k==="rent"){ const r=recCalc(h).rent; return r==null?-Infinity:r; } if(k==="serie")return String(h.serie||""); if(k==="mes")return String(h.mes||""); return String(h[k]||"").toLowerCase(); };
+    orderList.sort((a,b)=>{ const x=sv(a),y=sv(b); if(typeof x==="number"&&typeof y==="number")return (x-y)*dir; return String(x).localeCompare(String(y),"es")*dir; });
+  }
+  body.innerHTML=orderList.map(h=>{
    try{
     const open=!!STATE.holdRowOpen[h.id];
     const c=recCalc(h);
@@ -1679,7 +1694,7 @@ function renderInversiones(){
       <td class="right num">${h.saldoFin?fmtCLP(h.saldoFin):DASH}</td>
       <td class="right num">${gCol}</td>
       <td class="right num" style="font-weight:600">${rCol}</td>
-      <td style="white-space:nowrap"><button class="btn ${open?'accent':'ghost'} sm h-edit" type="button">${open?"Cerrar":"Editar"}</button> <button class="btn ghost sm h-del" type="button" aria-label="Eliminar">Quitar</button></td>
+      <td style="white-space:nowrap">${STATE.holdSort.key?"":`<button class="btn ghost sm h-up" type="button" aria-label="Subir" title="Subir" style="padding:2px 7px">↑</button> <button class="btn ghost sm h-down" type="button" aria-label="Bajar" title="Bajar" style="padding:2px 7px">↓</button> `}<button class="btn ${open?'accent':'ghost'} sm h-edit" type="button">${open?"Cerrar":"Editar"}</button> <button class="btn ghost sm h-del" type="button" aria-label="Eliminar">Quitar</button></td>
     </tr>`;
     if(!open) return mainRow;
     /* Panel desplegado: identificación + saldos + cuotas + aportes/retiros. */
@@ -1718,6 +1733,8 @@ function renderInversiones(){
     tr.addEventListener("dblclick",e=>{ if(e.target.closest(".h-del")||e.target.closest(".h-edit"))return; STATE.holdRowOpen[id]=!STATE.holdRowOpen[id]; renderInversiones(); });
     const editBtn=tr.querySelector(".h-edit"); if(editBtn) editBtn.addEventListener("click",e=>{ e.stopPropagation(); STATE.holdRowOpen[id]=!STATE.holdRowOpen[id]; renderInversiones(); });
     const delBtn=tr.querySelector(".h-del"); if(delBtn) delBtn.addEventListener("click",e=>{ e.stopPropagation(); removeHolding(id); });
+    const upBtn=tr.querySelector(".h-up"); if(upBtn) upBtn.addEventListener("click",e=>{ e.stopPropagation(); moveHolding(id,-1); });
+    const downBtn=tr.querySelector(".h-down"); if(downBtn) downBtn.addEventListener("click",e=>{ e.stopPropagation(); moveHolding(id,1); });
   });
   /* Listeners del panel desplegado. */
   body.querySelectorAll("tr.hold-panel").forEach(pr=>{
