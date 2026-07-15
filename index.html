@@ -753,7 +753,7 @@ async function onGoogleCredential(idToken){
     arrancarApp();
   }catch(err){
     setSessionToken("");
-    mostrarLogin("Tu cuenta no pertenece a un dominio autorizado, o hubo un error de conexión.");
+    mostrarLogin(err && err.message ? err.message : "Error de conexión. Reintentá.");
   }
 }
 
