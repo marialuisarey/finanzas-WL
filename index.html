@@ -367,19 +367,18 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
   #memo-content h3.memo-h{break-after:avoid;}
 }
 </style>
+<script src="https://accounts.google.com/gsi/client"></script>
 </head>
 <body>
 
-<script>
-/* Guard de acceso Wild Lama — redirige al portal si el login está activo y no hay sesión válida. */
-(function(){
-  if(localStorage.getItem("wl_login_enabled") !== "1") return; // login aún no configurado: acceso libre
-  var s=null;
-  try{ s=JSON.parse(sessionStorage.getItem("wl_auth")||localStorage.getItem("wl_auth")||"null"); }catch(e){}
-  var ok = s && typeof s.email==="string" && s.email.toLowerCase().indexOf("@wildlama.com")>-1;
-  if(!ok) location.replace("login.html");
-})();
-</script>
+<!-- Overlay de login (Google Identity Services). Se oculta tras una sesión válida;
+     el bloqueo real de datos ocurre en el Apps Script, no acá (ver initLogin/arrancarApp). -->
+<div id="loginOverlay" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#1E2F4D;color:#FBF7EF;font-family:'Libre Franklin',sans-serif;text-align:center;padding:24px">
+  <div style="font-family:Georgia,serif;font-size:28px;letter-spacing:.06em;text-transform:uppercase">Wild Capital Hub</div>
+  <div style="font-size:14px;color:#AEB9C8;max-width:320px">Acceso restringido a cuentas <strong>@wildlama.com</strong>.</div>
+  <div id="gsiButton"></div>
+  <div id="loginError" style="display:none;font-size:13px;color:#E08585;max-width:300px"></div>
+</div>
 
 <template id="__bundler_thumbnail" data-bg-color="#1E2F4D">
   <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
@@ -707,6 +706,73 @@ const MACRO_URL_CANDIDATES = [ BASE_URL + "?hoja=Macro", BASE_URL + "?sheet=Macr
 /* Agrega un parámetro anti-caché para forzar datos frescos en cada carga/refresco. */
 function withBust(url){ return url + (url.includes("?")?"&":"?") + "_t=" + Date.now(); }
 
+/* ============================================================
+   AUTENTICACIÓN — Google Identity Services + sesión propia
+   El botón de Google solo identifica; el Apps Script es quien verifica el
+   id_token contra Google y firma el token de sesión. Sin token válido, el
+   Apps Script rechaza lectura y escritura — el gate no es solo de UI.
+   ============================================================ */
+const GOOGLE_CLIENT_ID = "1075474055098-a2cd1oumubt5ugt2b79a5rma30dqufpq.apps.googleusercontent.com";
+const SESSION_KEY = "wl_session_token";
+
+function getSessionToken(){ return localStorage.getItem(SESSION_KEY) || ""; }
+function setSessionToken(t){ if(t) localStorage.setItem(SESSION_KEY, t); else localStorage.removeItem(SESSION_KEY); }
+
+/* Agrega el token de sesión a una URL de lectura del Apps Script. */
+function conToken(url){ return url + (url.includes("?")?"&":"?") + "token=" + encodeURIComponent(getSessionToken()); }
+
+/* Lee el `exp` del token sin validar firma (eso lo hace el Apps Script) —
+   solo para decidir si mostramos el login sin esperar un round-trip. */
+function payloadSesion(token){
+  try{
+    const b64 = token.split(".")[0].replace(/-/g,"+").replace(/_/g,"/");
+    return JSON.parse(decodeURIComponent(escape(atob(b64))));
+  }catch(e){ return null; }
+}
+function sesionVigente(){
+  const p = payloadSesion(getSessionToken());
+  return !!(p && p.exp && Date.now() < p.exp);
+}
+
+function mostrarLogin(mensajeError){
+  document.getElementById("loginOverlay").style.display = "flex";
+  const errBox = document.getElementById("loginError");
+  errBox.textContent = mensajeError || "";
+  errBox.style.display = mensajeError ? "block" : "none";
+}
+function ocultarLogin(){ document.getElementById("loginOverlay").style.display = "none"; }
+
+/* Se llama una sola vez, tras login exitoso o si ya había sesión vigente. */
+function arrancarApp(){ ocultarLogin(); initNav(); loadAll(); }
+
+async function onGoogleCredential(idToken){
+  try{
+    const r = await fetchJson(BASE_URL + "?accion=login&idToken=" + encodeURIComponent(idToken), 15000);
+    if(!r || !r.ok) throw new Error(r && r.error ? r.error : "Login rechazado");
+    setSessionToken(r.token);
+    arrancarApp();
+  }catch(err){
+    setSessionToken("");
+    mostrarLogin("Tu cuenta no pertenece a un dominio autorizado, o hubo un error de conexión.");
+  }
+}
+
+function initLogin(){
+  if(sesionVigente()){ arrancarApp(); return; }
+  setSessionToken("");
+  mostrarLogin();
+  if(!window.google || GOOGLE_CLIENT_ID.indexOf("REEMPLAZAR")===0){
+    mostrarLogin("Falta configurar GOOGLE_CLIENT_ID en el HTML.");
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: (resp) => { if(resp && resp.credential) onGoogleCredential(resp.credential); }
+  });
+  google.accounts.id.renderButton(document.getElementById("gsiButton"),
+    { type:"standard", theme:"outline", size:"large", text:"continue_with", shape:"rectangular", width:280 });
+}
+
 /* Respaldo de indicadores macro (valores del día informados por Tesorería,
    6-07-2026). Se usan solo si el endpoint no entrega la hoja Macro. */
 const MACRO_FALLBACK = [
@@ -833,7 +899,8 @@ async function fetchMacroMindicador(){
 async function loadAll(){
   setStatus("loading"); hideError();
   try{
-    const fondosJson = await fetchJson(withBust(FONDOS_URL), 30000);
+    const fondosJson = await fetchJson(conToken(withBust(FONDOS_URL)), 30000);
+    if(fondosJson && fondosJson.ok===false){ mostrarLogin("Tu sesión expiró. Iniciá sesión de nuevo."); return; }
     STATE.fondos = normalizeFondos(fondosJson);
     STATE.fondosMeta = { actualizado:fondosJson.actualizado||null, total:fondosJson.total!=null?fondosJson.total:STATE.fondos.length, hoja:fondosJson.hoja||"" };
 
@@ -842,7 +909,7 @@ async function loadAll(){
        Si la hoja no responde, se usa mindicador directo como respaldo. */
     STATE.macroOk=false; STATE.macro=[]; STATE.macroSource="";
     for(const url of MACRO_URL_CANDIDATES){
-      try{ const mj=await fetchJson(withBust(url), 12000); if(mj && mj.hoja && mj.hoja!=="Fondos"){ const m=extractMacro(mj); if(m&&m.length){ STATE.macro=m; STATE.macroOk=true; STATE.macroSource="live"; break; } } }
+      try{ const mj=await fetchJson(conToken(withBust(url)), 12000); if(mj && mj.hoja && mj.hoja!=="Fondos"){ const m=extractMacro(mj); if(m&&m.length){ STATE.macro=m; STATE.macroOk=true; STATE.macroSource="live"; break; } } }
       catch(e){}
     }
     if(!STATE.macroOk){ try{ const mm=await fetchMacroMindicador(); if(mm&&mm.length){ STATE.macro=mm; STATE.macroOk=true; STATE.macroSource="live"; } }catch(e){} }
@@ -1659,7 +1726,7 @@ async function guardarEnSheet(tipo){
   const P=PERSIST[tipo]; if(!P) return false;
   const arr = tipo==="inversiones"?STATE.holdings : tipo==="dap"?STATE.daps : STATE.loans;
   const filas = arr.map(P.toRow);
-  const payload = { accion:"guardar", hoja:P.hoja, campos:P.fields, filas };
+  const payload = { accion:"guardar", hoja:P.hoja, campos:P.fields, filas, token:getSessionToken() };
   setPersistMsg(tipo,"Guardando…");
   try{
     await fetch(BASE_URL, { method:"POST", mode:"no-cors", redirect:"follow",
@@ -1671,7 +1738,7 @@ async function guardarEnSheet(tipo){
   for(let intento=1; intento<=4; intento++){
     try{
       await new Promise(r=>setTimeout(r, 800*intento));
-      const j = await fetchJson(BASE_URL + "?hoja=" + encodeURIComponent(P.hoja) + "&_t=" + Date.now(), 15000);
+      const j = await fetchJson(conToken(BASE_URL + "?hoja=" + encodeURIComponent(P.hoja) + "&_t=" + Date.now()), 15000);
       const n = (j && j.hoja!=="Fondos" && Array.isArray(j.datos)) ? j.datos.filter(r=>Object.values(r).some(v=>v!=null&&v!=="")).length : 0;
       if(n>=target && target>0){ setPersistMsg(tipo,"Guardado ✓ "+n+" registro"+(n===1?"":"s")+" en la planilla · "+nowHM()); return true; }
       if(target===0){ setPersistMsg(tipo,"Guardado ✓ (planilla vacía) · "+nowHM()); return true; }
@@ -1685,7 +1752,7 @@ async function guardarEnSheet(tipo){
 async function cargarDeSheet(tipo, silencioso){
   const P=PERSIST[tipo]; if(!P) return;
   try{
-    const url = withBust(BASE_URL + "?hoja=" + encodeURIComponent(P.hoja));
+    const url = conToken(withBust(BASE_URL + "?hoja=" + encodeURIComponent(P.hoja)));
     const j = await fetchJson(url, 15000);
     if(!j || j.hoja==="Fondos" || !Array.isArray(j.datos)) { if(!silencioso) setPersistMsg(tipo,"No hay datos guardados aún."); return; }
     const rows = j.datos.filter(r=>Object.values(r).some(v=>v!=null&&v!=="")).map(P.fromRow);
@@ -2560,7 +2627,7 @@ async function cargarMacroHist(msg){
   const el=document.getElementById("macroHistMsg");
   if(msg&&el) el.textContent="Cargando…";
   try{
-    const j=await fetchJson(withBust(BASE_URL+"?hoja=Macro_Historico"),15000);
+    const j=await fetchJson(conToken(withBust(BASE_URL+"?hoja=Macro_Historico")),15000);
     if(!j||!Array.isArray(j.datos)){ if(el)el.textContent="No se pudo leer la hoja Macro_Historico."; return; }
     STATE.macroHist=j.datos.filter(r=>Object.values(r).some(v=>v!=null&&v!==""));
     renderMacroHist();
@@ -2801,8 +2868,7 @@ function initNav(){
   window.addEventListener("resize",()=>{ if(STATE.loaded&&document.getElementById("tab-explora").classList.contains("active"))drawScatter(getFiltered()); });
 }
 
-initNav();
-loadAll();
+initLogin();
 </script>
 </body>
 </html>
