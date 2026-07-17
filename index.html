@@ -1781,6 +1781,14 @@ function clearHoldings(){ STATE.holdings=[]; renderInversiones(); }
 /* Suma de los aportes / retiros detallados (si existen). */
 function aportesDetTotal(h){ return (h.aportesDet||[]).reduce((a,x)=>a+(toNum(x.monto)||0),0); }
 function retirosDetTotal(h){ return (h.retirosDet||[]).reduce((a,x)=>a+(toNum(x.monto)||0),0); }
+function autoMovMonto(a,dr,isAp,id){
+  const vc=toNum(a.cuota), n=toNum(a.nCuotas);
+  if(vc>0&&n>0){ a.monto=Math.round(vc*n);
+    const mo=dr.querySelector(isAp?".ad-monto":".rd-monto");
+    if(mo&&document.activeElement!==mo) mo.value=a.monto?nfInt.format(a.monto):"";
+    refreshCalc(id,true);
+  }
+}
 /* Cálculo por registro mensual (método Dietz: flujos al medio del mes).
    Si hay aportes/retiros detallados, el total proviene de ellos. */
 /* Cuadratura N° cuotas × valor cuota vs. saldo (corroboración de datos FFMM).
@@ -1797,8 +1805,8 @@ function cuadraturaHTML(h){
   };
   return `<div class="cuadra-box" style="display:flex;gap:22px;flex-wrap:wrap;margin-top:10px;padding:8px 12px;background:var(--surface);border:1px solid var(--rule);font-size:11.5px;font-family:var(--font-serif)">
     <span style="text-transform:uppercase;letter-spacing:.08em;font-size:9.5px;color:var(--ink-muted);font-family:var(--font-label);align-self:center">Cuadratura</span>
-    ${chk("Inicio",h.nCuotaI,h.cuotaIni,h.saldoIni)}
-    ${chk("Fin",h.nCuotaF,h.cuotaFin,h.saldoFin)}
+    ${chk("Monto invertido inicio",h.nCuotaI,h.cuotaIni,h.saldoIni)}
+    ${chk("Monto invertido fin",h.nCuotaF,h.cuotaFin,h.saldoFin)}
   </div>`;
 }
 
@@ -1869,9 +1877,9 @@ function renderInversiones(){
     const fondoOpts=h.agf?(`<option value="">— Fondo —</option>`+fondosDeAgf(h.agf).map(x=>opt(x,h.fondo)).join("")):`<option value="">Elige banco primero</option>`;
     const serieOpts=(h.agf&&h.fondo)?(`<option value="">— Serie —</option>`+seriesDeFondo(h.agf,h.fondo).map(x=>opt(x,h.serie)).join("")):`<option value="">Elige fondo primero</option>`;
     const fld=(lbl,inner)=>`<div style="display:flex;flex-direction:column;gap:4px"><label style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.09em;font-size:9.5px;color:var(--ink-muted);font-weight:600">${lbl}</label>${inner}</div>`;
-    const apRows=(h.aportesDet||[]).map((a,idx)=>`<tr data-di="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${idx+1}</td><td><input type="date" class="ad-fecha" style="width:148px" value="${a.fecha||""}"></td><td style="text-align:right"><input type="text" inputmode="numeric" class="ad-monto num" style="width:128px;text-align:right" placeholder="$0" value="${a.monto?nfInt.format(a.monto):""}"></td><td style="text-align:right"><input type="text" class="ad-cuota num" style="width:108px;text-align:right" placeholder="valor cuota" value="${a.cuota!=null?String(a.cuota):""}"></td><td><button class="btn ghost sm ad-del" type="button" style="padding:2px 8px;font-size:9.5px">Quitar</button></td></tr>`).join("");
-    const reRows=(h.retirosDet||[]).map((a,idx)=>`<tr data-di="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${idx+1}</td><td><input type="date" class="rd-fecha" style="width:148px" value="${a.fecha||""}"></td><td style="text-align:right"><input type="text" inputmode="numeric" class="rd-monto num" style="width:128px;text-align:right" placeholder="$0" value="${a.monto?nfInt.format(a.monto):""}"></td><td style="text-align:right"><input type="text" class="rd-cuota num" style="width:108px;text-align:right" placeholder="valor cuota" value="${a.cuota!=null?String(a.cuota):""}"></td><td><button class="btn ghost sm rd-del" type="button" style="padding:2px 8px;font-size:9.5px">Quitar</button></td></tr>`).join("");
-    const subTbl=(titulo,cls,rows,total,addcls)=>`<div style="margin-top:12px"><div style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--ink-muted);margin-bottom:6px">${titulo}</div><table class="data" style="width:auto;min-width:520px"><thead><tr><th class="right no-sort">#</th><th class="no-sort">Fecha</th><th class="right no-sort">Monto</th><th class="right no-sort">Valor cuota del día</th><th class="no-sort"></th></tr></thead><tbody>${rows||`<tr><td colspan="5" style="color:var(--ink-subtle);font-style:italic;font-family:var(--font-serif)">Sin registros aún.</td></tr>`}</tbody><tfoot><tr style="font-weight:600;border-top:2px solid var(--rule)"><td></td><td>Total</td><td style="text-align:right">${fmtCLP(total)}</td><td></td><td></td></tr></tfoot></table><button class="btn ghost sm ${addcls}" type="button" style="margin-top:8px">+ Agregar</button></div>`;
+    const apRows=(h.aportesDet||[]).map((a,idx)=>`<tr data-di="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${idx+1}</td><td><input type="date" class="ad-fecha" style="width:148px" value="${a.fecha||""}"></td><td style="text-align:right"><input type="text" inputmode="numeric" class="ad-monto num" style="width:128px;text-align:right" placeholder="$0" value="${a.monto?nfInt.format(a.monto):""}"></td><td style="text-align:right"><input type="text" class="ad-cuota num" style="width:108px;text-align:right" placeholder="valor cuota" value="${a.cuota!=null?String(a.cuota):""}"></td><td style="text-align:right"><input type="text" class="ad-nc num" style="width:100px;text-align:right" placeholder="N° cuotas" value="${a.nCuotas!=null?String(a.nCuotas):""}"></td><td><button class="btn ghost sm ad-del" type="button" style="padding:2px 8px;font-size:9.5px">Quitar</button></td></tr>`).join("");
+    const reRows=(h.retirosDet||[]).map((a,idx)=>`<tr data-di="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${idx+1}</td><td><input type="date" class="rd-fecha" style="width:148px" value="${a.fecha||""}"></td><td style="text-align:right"><input type="text" inputmode="numeric" class="rd-monto num" style="width:128px;text-align:right" placeholder="$0" value="${a.monto?nfInt.format(a.monto):""}"></td><td style="text-align:right"><input type="text" class="rd-cuota num" style="width:108px;text-align:right" placeholder="valor cuota" value="${a.cuota!=null?String(a.cuota):""}"></td><td style="text-align:right"><input type="text" class="rd-nc num" style="width:100px;text-align:right" placeholder="N° cuotas" value="${a.nCuotas!=null?String(a.nCuotas):""}"></td><td><button class="btn ghost sm rd-del" type="button" style="padding:2px 8px;font-size:9.5px">Quitar</button></td></tr>`).join("");
+    const subTbl=(titulo,cls,rows,total,addcls)=>`<div style="margin-top:12px"><div style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--ink-muted);margin-bottom:6px">${titulo}</div><table class="data" style="width:auto;min-width:520px"><thead><tr><th class="right no-sort">#</th><th class="no-sort">Fecha</th><th class="right no-sort">Monto</th><th class="right no-sort">Valor cuota del día</th><th class="right no-sort">N° cuotas</th><th class="no-sort"></th></tr></thead><tbody>${rows||`<tr><td colspan="6" style="color:var(--ink-subtle);font-style:italic;font-family:var(--font-serif)">Sin registros aún.</td></tr>`}</tbody><tfoot><tr style="font-weight:600;border-top:2px solid var(--rule)"><td></td><td>Total</td><td style="text-align:right">${fmtCLP(total)}</td><td></td><td></td><td></td></tr></tfoot></table><button class="btn ghost sm ${addcls}" type="button" style="margin-top:8px">+ Agregar</button></div>`;
     const panel=`<tr class="hold-panel" data-for="${h.id}"><td colspan="${HOLD_COLS.length}" style="background:var(--surface-2);padding:16px 18px">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px 16px">
         ${fld("Banco / AGF",`<select class="h-agf">${agfOpts}</select>`)}
@@ -1917,7 +1925,13 @@ function renderInversiones(){
     pr.querySelector(".h-mes").addEventListener("change",e=>{ h.mes=e.target.value; refreshCalc(id); });
     const money=(sel,prop)=>{ const el=pr.querySelector(sel); if(el&&!el.disabled) el.addEventListener("input",ev=>{ h[prop]=parseMiles(ev.target.value); ev.target.value=h[prop]?nfInt.format(h[prop]):""; refreshCalc(id); }); };
     money(".h-si","saldoIni"); money(".h-sf","saldoFin");
-    const updCuadra=()=>{ const box=pr.querySelector(".cuadra-box"); if(box) box.outerHTML=cuadraturaHTML(h); refreshCalc(id); };
+    const autoMonto=()=>{
+      const vi=toNum(h.cuotaIni), ni=toNum(h.nCuotaI);
+      if(vi>0&&ni>0){ h.saldoIni=Math.round(vi*ni); const si=pr.querySelector(".h-si"); if(si&&document.activeElement!==si) si.value=nfInt.format(h.saldoIni); }
+      const vf=toNum(h.cuotaFin), nf2_=toNum(h.nCuotaF);
+      if(vf>0&&nf2_>0){ h.saldoFin=Math.round(vf*nf2_); const sf=pr.querySelector(".h-sf"); if(sf&&document.activeElement!==sf) sf.value=nfInt.format(h.saldoFin); }
+    };
+    const updCuadra=()=>{ autoMonto(); const box=pr.querySelector(".cuadra-box"); if(box) box.outerHTML=cuadraturaHTML(h); refreshCalc(id); };
     pr.querySelector(".h-cuotaI").addEventListener("input",e=>{ h.cuotaIni=e.target.value; updCuadra(); });
     pr.querySelector(".h-cuotaF").addEventListener("input",e=>{ h.cuotaFin=e.target.value; updCuadra(); });
     const nci=pr.querySelector(".h-nCuotaI"), ncf=pr.querySelector(".h-nCuotaF");
@@ -1930,11 +1944,12 @@ function renderInversiones(){
       const arr=isAp?h.aportesDet:h.retirosDet; const a=arr&&arr[di]; if(!a)return;
       const fe=dr.querySelector(isAp?".ad-fecha":".rd-fecha"); fe.addEventListener("change",e=>{ a.fecha=e.target.value; });
       const mo=dr.querySelector(isAp?".ad-monto":".rd-monto"); mo.addEventListener("input",e=>{ a.monto=parseMiles(e.target.value); e.target.value=a.monto?nfInt.format(a.monto):""; refreshCalc(id,true); });
-      const cu=dr.querySelector(isAp?".ad-cuota":".rd-cuota"); cu.addEventListener("input",e=>{ a.cuota=e.target.value; });
+      const cu=dr.querySelector(isAp?".ad-cuota":".rd-cuota"); cu.addEventListener("input",e=>{ a.cuota=e.target.value; autoMovMonto(a,dr,isAp,id); });
+      const nc=dr.querySelector(isAp?".ad-nc":".rd-nc"); if(nc) nc.addEventListener("input",e=>{ a.nCuotas=e.target.value; autoMovMonto(a,dr,isAp,id); });
       dr.querySelector(isAp?".ad-del":".rd-del").addEventListener("click",()=>{ arr.splice(di,1); renderInversiones(); });
     });
-    const apAdd=pr.querySelector(".ad-add"); if(apAdd) apAdd.addEventListener("click",()=>{ if(!h.aportesDet)h.aportesDet=[]; h.aportesDet.push({fecha:hoyISO(),monto:0,cuota:""}); renderInversiones(); });
-    const reAdd=pr.querySelector(".rd-add"); if(reAdd) reAdd.addEventListener("click",()=>{ if(!h.retirosDet)h.retirosDet=[]; h.retirosDet.push({fecha:hoyISO(),monto:0,cuota:""}); renderInversiones(); });
+    const apAdd=pr.querySelector(".ad-add"); if(apAdd) apAdd.addEventListener("click",()=>{ if(!h.aportesDet)h.aportesDet=[]; h.aportesDet.push({fecha:hoyISO(),monto:0,cuota:"",nCuotas:""}); renderInversiones(); });
+    const reAdd=pr.querySelector(".rd-add"); if(reAdd) reAdd.addEventListener("click",()=>{ if(!h.retirosDet)h.retirosDet=[]; h.retirosDet.push({fecha:hoyISO(),monto:0,cuota:"",nCuotas:""}); renderInversiones(); });
   });
   renderByFund(); renderHoldSummary(); renderCartera();
 }
@@ -2329,8 +2344,13 @@ function loanMetrics(loan){
 const LOAN_COLS=["Contraparte","Fecha","Monto (CLP)","Tasa mensual","Plazo","Sistema","Cuota estim.","Interés total","Rentab. período","Rentab. mensual",""];
 function renderPrestamos(){
   const head=document.getElementById("loanHead"), body=document.getElementById("loanBody"); if(!head)return;
-  head.innerHTML="<tr>"+LOAN_COLS.map((h,idx)=>`<th class="${idx>=2&&idx<=9?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
+  head.innerHTML="<tr>"+LOAN_COLS.map((h,idx)=>{
+    if(idx===1){ const d=STATE.loanSortDir||0; const ind=d?`<span class="sort-ind">${d>0?"▲":"▼"}</span>`:""; return `<th data-loansort="1" style="cursor:pointer;user-select:none" title="Ordenar por fecha de otorgamiento">${h}${ind}</th>`; }
+    return `<th class="${idx>=2&&idx<=9?'right':''} no-sort">${h}</th>`;
+  }).join("")+"</tr>";
+  const lts=head.querySelector('th[data-loansort]'); if(lts) lts.addEventListener('click',()=>{ STATE.loanSortDir=(STATE.loanSortDir>0)?-1:1; renderPrestamos(); });
   if(!STATE.loans.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${LOAN_COLS.length}">Aún no hay préstamos registrados. Usa "Agregar préstamo" para empezar.</td></tr>`; renderLoanSummary(); return; }
+  if(STATE.loanSortDir){ const dir=STATE.loanSortDir; STATE.loans.sort((a,b)=>{ const av=a.fecha||"", bv=b.fecha||""; if(av===bv)return 0; if(!av)return 1; if(!bv)return -1; return av<bv?-dir:dir; }); }
 
   const sisOpts=(sel)=>Object.entries(LOAN_SISTEMAS).map(([v,l])=>`<option value="${v}" ${sel===v?"selected":""}>${escHtml(l)}</option>`).join("");
   body.innerHTML=STATE.loans.map(l=>{
@@ -2513,10 +2533,15 @@ function dapDevengadoEnRango(d,from,to){
 const DAP_COLS=["Banco / AGF","Fecha inversión","Monto (CLP)","Período","Interés al venc.","Tasa anual","Tasa mensual","Vencimiento","Devengado a hoy","Estado",""];
 function renderDap(){
   const head=document.getElementById("dapHead"), body=document.getElementById("dapBody"); if(!head)return;
-  head.innerHTML="<tr>"+DAP_COLS.map((h,i)=>`<th class="${i>=2&&i<=8?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
+  head.innerHTML="<tr>"+DAP_COLS.map((h,i)=>{
+    if(i===1){ const d=STATE.dapSortDir||0; const ind=d?`<span class="sort-ind">${d>0?"▲":"▼"}</span>`:""; return `<th data-dapsort="1" style="cursor:pointer;user-select:none" title="Ordenar por fecha de inversión">${h}${ind}</th>`; }
+    return `<th class="${i>=2&&i<=8?'right':''} no-sort">${h}</th>`;
+  }).join("")+"</tr>";
+  const dts=head.querySelector('th[data-dapsort]'); if(dts) dts.addEventListener('click',()=>{ STATE.dapSortDir=(STATE.dapSortDir>0)?-1:1; renderDap(); });
   const agfSug = (STATE.fondos.length?distinct("AGF"):[]).map(a=>`<option value="${escAttr(a)}"></option>`).join("");
   if(!document.getElementById("agfDatalist")){ const dl=document.createElement("datalist"); dl.id="agfDatalist"; dl.innerHTML=agfSug; document.body.appendChild(dl); }
   if(!STATE.daps.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${DAP_COLS.length}">Aún no hay depósitos registrados. Usa "Agregar DAP" para empezar.</td></tr>`; renderDapKpis(); renderDapMonth(); return; }
+  if(STATE.dapSortDir){ const dir=STATE.dapSortDir; STATE.daps.sort((a,b)=>{ const av=a.fecha||"", bv=b.fecha||""; if(av===bv)return 0; if(!av)return 1; if(!bv)return -1; return av<bv?-dir:dir; }); }
   body.innerHTML=STATE.daps.map(d=>{
     const m=dapMetrics(d);
     const estado = !m.fin ? DASH : (m.vigente?`<span class="tramo-tag t1">Vigente</span>`:`<span class="tramo-tag" style="background:var(--burgundy);color:var(--cream);border-color:var(--burgundy)">Vencido</span>`);
