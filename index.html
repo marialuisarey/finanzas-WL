@@ -403,7 +403,8 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
       <div class="header-status">
         <div class="status-line" id="statusFecha">Cartera CMF al: —</div>
         <div class="status-line" id="statusActualizado">Actualizado: —</div>
-        <div class="status-line" style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="btnRefresh" style="font-family:var(--font-serif)">Refrescar datos</button><button class="btn sm" id="btnExportXlsx" style="font-family:var(--font-serif)">Exportar a Excel</button><button class="btn sm" id="btnExportPdf" style="font-family:var(--font-serif)">Exportar a PDF</button></div>
+        <div class="status-line" id="roleChip" style="margin-top:7px"></div>
+        <div class="status-line" style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="btnRefresh" style="font-family:var(--font-serif)">Refrescar datos</button><button class="btn sm" id="btnExportXlsx" style="font-family:var(--font-serif)">Exportar a Excel</button><button class="btn sm" id="btnExportPdf" style="font-family:var(--font-serif)">Exportar a PDF</button><button class="btn sm" id="btnLogout" style="font-family:var(--font-serif)">Cerrar sesión</button></div>
       </div>
     </div>
 
@@ -743,18 +744,85 @@ function mostrarLogin(mensajeError){
 function ocultarLogin(){ document.getElementById("loginOverlay").style.display = "none"; }
 
 /* Se llama una sola vez, tras login exitoso o si ya había sesión vigente. */
-function arrancarApp(){ ocultarLogin(); initNav(); loadAll(); }
+function arrancarApp(){ ocultarLogin(); initAccesoRBAC(); initNav(); loadAll(); }
 
 async function onGoogleCredential(idToken){
   try{
     const r = await fetchJson(BASE_URL + "?accion=login&idToken=" + encodeURIComponent(idToken), 15000);
     if(!r || !r.ok) throw new Error(r && r.error ? r.error : "Login rechazado");
     setSessionToken(r.token);
+    setUserEmail(emailDeIdToken(idToken));
     arrancarApp();
   }catch(err){
     setSessionToken("");
     mostrarLogin(err && err.message ? err.message : "Error de conexión. Reintentá.");
   }
+}
+
+/* ============================================================
+   CONTROL DE ACCESO POR ROL (RBAC)
+   Solo los correos en ADMIN_EMAILS pueden editar y guardar registros.
+   Cualquier otra cuenta @wildlama.com entra en modo SOLO LECTURA.
+
+   ▸ Para gestionar quién puede editar, edita SOLO esta lista.
+   ▸ IMPORTANTE (seguridad real): este bloqueo es de interfaz. Para que
+     nadie pueda alterar los registros saltándose la UI, el Apps Script
+     debe verificar en doPost que el email del token esté en la misma
+     lista de administradores ANTES de escribir en la planilla.
+   ============================================================ */
+const ADMIN_EMAILS = ["marialuisa.rey@wildlama.com"]; // <-- correos con permiso de edición (minúsculas)
+const EMAIL_KEY = "wl_email";
+function getUserEmail(){ return (localStorage.getItem(EMAIL_KEY)||"").toLowerCase(); }
+function setUserEmail(e){ if(e) localStorage.setItem(EMAIL_KEY, String(e).toLowerCase()); }
+function esAdmin(){ const me=getUserEmail(); return !!me && ADMIN_EMAILS.map(x=>String(x).toLowerCase()).indexOf(me)>-1; }
+function emailDeIdToken(idToken){ try{ const p=JSON.parse(decodeURIComponent(escape(atob(idToken.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))))); return (p.email||"").toLowerCase(); }catch(e){ return ""; } }
+
+function injectRbacCSS(){
+  if(document.getElementById("wl-rbac-css")) return;
+  const s=document.createElement("style"); s.id="wl-rbac-css";
+  s.textContent = "#wlReadonlyBanner{display:none;}"
+  + "body.wl-readonly #wlReadonlyBanner{display:block;background:#F4E7EA;border-bottom:1px solid var(--burgundy);color:var(--burgundy);padding:9px 0;font-size:12.5px;font-family:var(--font-label);letter-spacing:.03em;}"
+  + "body.wl-readonly #btnAddInv,body.wl-readonly #btnSaveInv,body.wl-readonly #btnAddLoan,body.wl-readonly #btnSaveLoan,body.wl-readonly #btnAddDap,body.wl-readonly #btnSaveDap{display:none !important;}"
+  + "body.wl-readonly #holdBody .h-del,body.wl-readonly #holdBody .h-up,body.wl-readonly #holdBody .h-down,body.wl-readonly #holdBody .ad-del,body.wl-readonly #holdBody .rd-del,body.wl-readonly #holdBody .ad-add,body.wl-readonly #holdBody .rd-add,body.wl-readonly #loanBody .l-del,body.wl-readonly #dapBody .d-del{display:none !important;}"
+  + "body.wl-readonly #holdBody input,body.wl-readonly #holdBody select,body.wl-readonly #holdBody textarea,body.wl-readonly #loanBody input,body.wl-readonly #loanBody select,body.wl-readonly #loanBody textarea,body.wl-readonly #dapBody input,body.wl-readonly #dapBody select,body.wl-readonly #dapBody textarea{pointer-events:none !important;background:transparent !important;border-color:transparent !important;box-shadow:none !important;-webkit-appearance:none;appearance:none;color:var(--ink);}"
+  + ".wl-role-chip{display:inline-block;padding:2px 9px;font-family:var(--font-label);text-transform:uppercase;letter-spacing:.12em;font-size:10px;font-weight:600;border:1px solid var(--border-strong);}"
+  + ".wl-role-chip.admin{background:#E7ECF2;color:var(--navy);border-color:var(--navy);}"
+  + ".wl-role-chip.viewer{background:#F4E7EA;color:var(--burgundy);border-color:var(--burgundy);}";
+  document.head.appendChild(s);
+}
+
+function lockRecordInputs(){
+  if(esAdmin()) return;
+  ["holdBody","loanBody","dapBody"].forEach(function(bid){
+    const b=document.getElementById(bid); if(!b) return;
+    b.querySelectorAll("input,select,textarea").forEach(function(el){ el.readOnly=true; el.tabIndex=-1; if(el.tagName==="SELECT") el.disabled=true; });
+  });
+}
+
+function aplicarModoAcceso(){
+  const admin=esAdmin();
+  document.body.classList.toggle("wl-readonly", !admin);
+  const me=getUserEmail()||"(sin sesión)";
+  const chip=document.getElementById("roleChip");
+  if(chip) chip.innerHTML = '<span class="wl-role-chip '+(admin?"admin":"viewer")+'">'+(admin?"Administrador":"Solo lectura")+'</span> <span style="opacity:.8">'+me+'</span>';
+  const be=document.getElementById("wlBannerEmail"); if(be) be.textContent=me;
+  if(!admin) lockRecordInputs();
+}
+
+function initAccesoRBAC(){
+  injectRbacCSS();
+  if(!document.getElementById("wlReadonlyBanner")){
+    const bn=document.createElement("div"); bn.id="wlReadonlyBanner";
+    bn.innerHTML = '<div class="wrap"><strong>Modo solo lectura.</strong> Solo el administrador puede editar y guardar registros. Tu correo: <b id="wlBannerEmail"></b></div>';
+    const hdr=document.querySelector("header.app"); if(hdr&&hdr.parentNode) hdr.parentNode.insertBefore(bn, hdr.nextSibling);
+  }
+  aplicarModoAcceso();
+  ["holdBody","loanBody","dapBody"].forEach(function(bid){
+    const b=document.getElementById(bid); if(!b) return;
+    new MutationObserver(function(){ if(!esAdmin()) lockRecordInputs(); }).observe(b,{childList:true,subtree:true});
+  });
+  const lo=document.getElementById("btnLogout");
+  if(lo) lo.addEventListener("click",function(){ setSessionToken(""); localStorage.removeItem(EMAIL_KEY); location.reload(); });
 }
 
 function initLogin(){
@@ -1724,6 +1792,7 @@ function normFechaISO(v){
    la hoja con un GET, que sí es legible cross-origin. */
 async function guardarEnSheet(tipo){
   const P=PERSIST[tipo]; if(!P) return false;
+  if(!esAdmin()){ setPersistMsg(tipo,"Modo solo lectura: tu usuario no tiene permiso para guardar cambios."); return false; }
   const arr = tipo==="inversiones"?STATE.holdings : tipo==="dap"?STATE.daps : STATE.loans;
   const filas = arr.map(P.toRow);
   const payload = { accion:"guardar", hoja:P.hoja, campos:P.fields, filas, token:getSessionToken() };
