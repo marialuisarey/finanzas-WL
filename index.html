@@ -804,7 +804,7 @@ function aplicarModoAcceso(){
   document.body.classList.toggle("wl-readonly", !admin);
   const me=getUserEmail()||"(sin sesión)";
   const chip=document.getElementById("roleChip");
-  if(chip) chip.innerHTML = '<span class="wl-role-chip '+(admin?"admin":"viewer")+'">'+(admin?"Administrador":"Solo lectura")+'</span> <span style="opacity:.8">'+me+'</span>';
+  if(chip) chip.innerHTML = '<div><span class="wl-role-chip '+(admin?"admin":"viewer")+'">'+(admin?"Administrador":"Lector")+'</span></div><div style="opacity:.85;margin-top:3px">'+me+'</div>';
   const be=document.getElementById("wlBannerEmail"); if(be) be.textContent=me;
   if(!admin) lockRecordInputs();
 }
@@ -2904,11 +2904,13 @@ function escHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&
 function escAttr(s){ return escHtml(s); }
 
 function initNav(){
+  var _sf=document.getElementById("statusFecha"); if(_sf) _sf.style.display="none";
   document.querySelectorAll(".tab-btn").forEach(btn=>btn.addEventListener("click",()=>{
     document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
     document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("active"));
     btn.classList.add("active"); const tab=btn.dataset.tab;
     document.getElementById("tab-"+tab).classList.add("active");
+    var sf=document.getElementById("statusFecha"); if(sf) sf.style.display=(tab==="explora")?"":"none";
     if(tab==="reglas")renderReglas();
     if(tab==="inversiones")renderInversiones();
     if(tab==="prestamos")renderPrestamos();
