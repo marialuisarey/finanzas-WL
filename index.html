@@ -10,6 +10,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
 <style>
 /* ============================================================
@@ -739,9 +741,20 @@ function mostrarLogin(mensajeError){
   document.getElementById("loginOverlay").style.display = "flex";
   const errBox = document.getElementById("loginError");
   errBox.textContent = mensajeError || "";
-  errBox.style.display = mensajeError ? "block" : "none";
+  errBox.style.display = mensajeError ? "block" : "none"; mostrarBotonVistaPrevia();
 }
 function ocultarLogin(){ document.getElementById("loginOverlay").style.display = "none"; }
+/* Respaldo: si el login de Google no puede cargar (p. ej. bloqueado en la vista previa),
+   ofrece entrar en modo vista previa. El control real de datos vive en el Apps Script. */
+function mostrarBotonVistaPrevia(){
+  if(document.getElementById("btnVistaPrevia")) return;
+  const cont=document.getElementById("loginOverlay"); if(!cont) return;
+  const b=document.createElement("button");
+  b.id="btnVistaPrevia"; b.type="button"; b.textContent="Continuar en modo vista previa";
+  b.style.cssText="margin-top:6px;padding:11px 20px;border:1.5px solid #FBF7EF;background:transparent;color:#FBF7EF;font-family:'Libre Franklin',sans-serif;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:600;cursor:pointer";
+  b.addEventListener("click",()=>{ try{ arrancarApp(); }catch(e){ ocultarLogin(); initNav(); renderPrestamos(); } });
+  cont.appendChild(b);
+}
 
 /* Se llama una sola vez, tras login exitoso o si ya había sesión vigente. */
 function arrancarApp(){ ocultarLogin(); initAccesoRBAC(); initNav(); loadAll(); }
@@ -829,7 +842,12 @@ function initLogin(){
   if(sesionVigente()){ arrancarApp(); return; }
   setSessionToken("");
   mostrarLogin();
-  if(!window.google || GOOGLE_CLIENT_ID.indexOf("REEMPLAZAR")===0){
+  if(!window.google){
+    mostrarLogin("No se pudo cargar el inicio de sesión de Google (bloqueado en este entorno).");
+    mostrarBotonVistaPrevia();
+    return;
+  }
+  if(GOOGLE_CLIENT_ID.indexOf("REEMPLAZAR")===0){
     mostrarLogin("Falta configurar GOOGLE_CLIENT_ID en el HTML.");
     return;
   }
@@ -1369,21 +1387,25 @@ function renderCartera(){
   const MM=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   /* Fecha "as-of" (GIPS): la cartera se reporta a una fecha concreta. Por defecto,
      el mes en curso. Cambiarla muestra solo las posiciones vigentes en ese mes. */
-  if(!STATE.asOf) STATE.asOf = hoyISO();
-  const asOf = STATE.asOf;                                   // fecha específica YYYY-MM-DD
-  const am = asOf.match(/^(\d{4})-(\d{2})-(\d{2})/) || asOf.match(/^(\d{4})-(\d{2})/);
-  const aY = am?+am[1]:new Date().getFullYear(), aMo = am?+am[2]-1:new Date().getMonth();
-  const asOfMes = String(aY)+"-"+String(aMo+1).padStart(2,"0");
-  const asOfTime = new Date(asOf).getTime();
-  const m0=new Date(aY,aMo,1).getTime(), m1=new Date(aY,aMo+1,1).getTime();
-  const mesLabel = fmtFechaCorta(asOfTime);
+  const hoy = hoyISO();
+  /* Rango del período: fecha inicio y fecha término (por defecto, mes en curso). */
+  if(!STATE.asOfHasta) STATE.asOfHasta = STATE.asOf || hoy;
+  if(!STATE.asOfDesde){ const hh=STATE.asOfHasta.match(/^(\d{4})-(\d{2})/); STATE.asOfDesde = hh?(hh[1]+"-"+hh[2]+"-01"):hoy; }
+  if(STATE.asOfDesde > STATE.asOfHasta) STATE.asOfDesde = STATE.asOfHasta;
+  const desde = STATE.asOfDesde, hasta = STATE.asOfHasta;
+  const desdeMes = desde.slice(0,7), hastaMes = hasta.slice(0,7);
+  const asOfMes = hastaMes;                                  // snapshot al término del rango
+  const m0 = new Date(desde).getTime();
+  const m1 = new Date(hasta).getTime() + 86400000;          // término inclusive
+  const mesLabel = fmtFechaCorta(desde)+" – "+fmtFechaCorta(hasta);
 
   const items=[];
   /* FFMM: posición vigente = registro de ESE mes con saldo. Rentó = TWR del mes. */
   const gk={};
   (STATE.holdings||[]).forEach(h=>{ if(!(h.fondo||h.agf))return; const k=h.agf+"|"+h.fondo+"|"+h.serie; (gk[k]||(gk[k]=[])).push(h); });
   Object.values(gk).forEach(arr=>{
-    const rec=arr.find(h=>String(h.mes)===asOfMes); if(!rec)return;
+    const inRange=arr.filter(h=>{ const mm=String(h.mes||""); return mm>=desdeMes && mm<=hastaMes; });
+    const rec=inRange.sort((a,b)=>String(b.mes).localeCompare(String(a.mes)))[0]; if(!rec)return;
     const c=recCalc(rec); const invertido=c.sf>0?c.sf:(c.si+c.ap-c.re);
     if(invertido>0) items.push({tipo:"FFMM", label:rec.fondo||rec.agf||"Fondo", sub:rec.agf||"", capital:invertido, rentMes:c.rent, enCurso:c.enCurso});
   });
@@ -1401,9 +1423,13 @@ function renderCartera(){
   });
 
   /* Control de fecha (siempre visible, aunque no haya posiciones vigentes). */
-  const dateControl=`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:10px 14px;background:var(--surface);border:1px solid var(--rule)">
-    <span style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.09em;font-size:10px;color:var(--ink-muted);font-weight:600">Cartera vigente a</span>
-    <input type="date" id="asOfDate" value="${asOf}" style="font-family:var(--font-ui);font-size:13px;padding:4px 8px;border:1.5px solid var(--navy);background:var(--cream)">
+  const lblStyle="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.09em;font-size:10px;color:var(--ink-muted);font-weight:600";
+  const inpStyle="font-family:var(--font-ui);font-size:13px;padding:4px 8px;border:1.5px solid var(--navy);background:var(--cream)";
+  const dateControl=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding:10px 14px;background:var(--surface);border:1px solid var(--rule)">
+    <span style="${lblStyle}">Período — desde</span>
+    <input type="date" id="asOfDesde" value="${desde}" max="${hasta}" style="${inpStyle}">
+    <span style="${lblStyle}">hasta</span>
+    <input type="date" id="asOfHasta" value="${hasta}" style="${inpStyle}">
   </div>`;
 
   if(!items.length){
@@ -1422,16 +1448,9 @@ function renderCartera(){
   const maxPct = totalCap>0 ? items[0].capital/totalCap*100 : 100;
   const rows=items.map(i=>{
     const pct=totalCap>0?i.capital/totalCap*100:0;
-    const rCol=(i.rentMes!=null&&i.rentMes>=0)?"#2E6B52":"#B03A3A";
-    const rTxt = i.enCurso?`<span style="color:var(--ink-subtle);font-style:italic;font-size:11px">en curso</span>`
-      : (i.rentMes==null?DASH:`<span style="color:${rCol};font-weight:600">${i.rentMes>=0?"+":""}${nf2.format(i.rentMes*100)}%</span>`);
-    const rentPesos = (i.rentMes!=null&&!i.enCurso)?i.rentMes*i.capital:null;
-    const rpTxt = (rentPesos==null||rentPesos===0)?DASH:`<span style="color:${rCol};font-weight:600">${rentPesos>0?"+":""}${fmtCLP(rentPesos)}</span>`;
-    return `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px 120px 82px minmax(0,1.2fr);gap:14px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule)">
+    return `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px minmax(0,1.2fr);gap:14px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule)">
       <div style="min-width:0;display:flex;align-items:center;gap:8px"><span style="width:11px;height:11px;border-radius:2px;background:${i.color};flex:none"></span><span class="trunc" style="font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(i.label)}">${escHtml(i.label)}</span><span style="font-size:9.5px;color:var(--ink-subtle);text-transform:uppercase;letter-spacing:.05em;flex:none">${escHtml(i.tipo)}</span></div>
       <div class="num" style="text-align:right;font-size:12.5px;font-weight:600;white-space:nowrap">${fmtCLP(i.capital)}</div>
-      <div class="num" style="text-align:right;font-size:12px;white-space:nowrap">${rpTxt}</div>
-      <div style="text-align:right;font-size:12px">${rTxt}</div>
       <div style="display:flex;align-items:center;gap:8px" title="${nf2.format(pct)}% del total">
         <span style="position:relative;flex:1;height:15px;background:var(--rule);border-radius:2px;overflow:hidden"><span style="position:absolute;inset:0 auto 0 0;width:${pct.toFixed(1)}%;background:${i.color};border-radius:2px"></span></span>
         <span class="num" style="width:46px;text-align:right;font-size:11.5px;font-weight:700;color:var(--navy)">${nf2.format(pct)}%</span>
@@ -1442,21 +1461,19 @@ function renderCartera(){
   const rentCol=(rentMesPct||0)>=0?"#2E6B52":"#B03A3A";
   el.innerHTML=
     dateControl+
-    `<div class="summary-grid" style="margin-bottom:18px">`+
+    `<div class="summary-grid" style="margin-bottom:18px;grid-template-columns:repeat(2,1fr)">`+
       `<div class="summary-cell"><div class="s-label">Invertido a ${mesLabel}</div><div class="s-val num">${fmtCLP(totalCap)}</div></div>`+
-      `<div class="summary-cell"><div class="s-label">Rentó en ${mesLabel} ($)</div><div class="s-val num" style="color:${rentCol}">${totalMes!==0?((totalMes>0?"+":"")+fmtCLP(totalMes)):DASH}</div></div>`+
-      `<div class="summary-cell"><div class="s-label">Rentabilidad de ${mesLabel} (%)</div><div class="s-val num" style="color:${rentCol}">${rentMesPct!=null&&totalMes!==0?(rentMesPct>0?"+":"")+nf2.format(rentMesPct*100)+"%":DASH}</div></div>`+
       `<div class="summary-cell"><div class="s-label">N° de posiciones vigentes</div><div class="s-val num">${fmtInt(items.length)}</div></div>`+
     `</div>`+
-    `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px 120px 82px minmax(0,1.2fr);gap:14px;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-muted);font-family:var(--font-label);padding-bottom:6px;border-bottom:1.5px solid var(--rule)"><span>Fondo / posición</span><span style="text-align:right">Invertido</span><span style="text-align:right">Rentó $</span><span style="text-align:right">Rentó</span><span style="text-align:right">Participación</span></div>`+
+    `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px minmax(0,1.2fr);gap:14px;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-muted);font-family:var(--font-label);padding-bottom:6px;border-bottom:1.5px solid var(--rule)"><span>Fondo / posición</span><span style="text-align:right">Invertido</span><span style="text-align:right">Participación</span></div>`+
     rows+
-    `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px 120px 82px minmax(0,1.2fr);gap:14px;align-items:center;padding:8px 0 0;border-top:2px solid var(--rule);margin-top:2px;font-weight:700"><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted)">Total</span><span class="num" style="text-align:right;font-size:12.5px">${fmtCLP(totalCap)}</span><span class="num" style="text-align:right;font-size:12px;color:${rentCol}">${totalMes!==0?((totalMes>0?"+":"")+fmtCLP(totalMes)):DASH}</span><span></span><span class="num" style="text-align:right;font-size:11.5px;color:var(--navy)">100%</span></div>`+
-    `<p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">"Rentó" es la rentabilidad temporalmente ponderada (TWR) del mes seleccionado según GIPS. La barra muestra la participación real de cada posición sobre el total invertido a esa fecha. Referencial: no descuenta comisiones ni impuestos.</p>`;
+    `<div style="display:grid;grid-template-columns:minmax(0,1.6fr) 130px minmax(0,1.2fr);gap:14px;align-items:center;padding:8px 0 0;border-top:2px solid var(--rule);margin-top:2px;font-weight:700"><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted)">Total</span><span class="num" style="text-align:right;font-size:12.5px">${fmtCLP(totalCap)}</span><span class="num" style="text-align:right;font-size:11.5px;color:var(--navy)">100%</span></div>`+
+    `<p style="font-size:11.5px;color:var(--ink-subtle);margin-top:12px;font-family:var(--font-serif);font-style:italic">La barra muestra la participación real de cada posición sobre el total invertido a la fecha seleccionada.</p>`;
   bindAsOf();
   renderMensualMatriz();
 }
 /* Enlaza el selector de fecha as-of del dashboard. */
-function bindAsOf(){ const inp=document.getElementById("asOfDate"); if(inp&&!inp._bound){ inp._bound=true; inp.addEventListener("change",e=>{ STATE.asOf=e.target.value||hoyISO(); renderCartera(); }); } }
+function bindAsOf(){ const d=document.getElementById("asOfDesde"), h=document.getElementById("asOfHasta"); if(d&&!d._bound){ d._bound=true; d.addEventListener("change",e=>{ STATE.asOfDesde=e.target.value||STATE.asOfHasta; renderCartera(); }); } if(h&&!h._bound){ h._bound=true; h.addEventListener("change",e=>{ STATE.asOfHasta=e.target.value||hoyISO(); renderCartera(); }); } }
 
 /* Matriz portada: rentabilidad de cada fondo (FFMM) en cada mes del año en curso
    y la ganancia total generada cada mes. La celda muestra la rentabilidad % del
@@ -1973,6 +1990,13 @@ function renderInversiones(){
     return mainRow+panel;
    }catch(err){ console.error("Error en registro FFMM",h,err); return `<tr data-id="${h.id}" class="hold-main"><td>${escHtml(h.agf||"—")}</td><td class="trunc">${escHtml(h.fondo||"—")}</td><td>${escHtml(String(h.serie||"—"))}</td><td colspan="4" style="color:var(--danger);font-style:italic">Registro con datos inválidos — <button class="btn ghost sm h-del" type="button">Quitar</button></td><td></td></tr>`; }
   }).join("");
+  /* Fila de totales: ganancia total y saldo final total de todas las posiciones. */
+  (function(){
+    let totG=0, totS=0;
+    orderList.forEach(h=>{ const c=recCalc(h); totG+=(c.ganancia||0); totS+=(+h.saldoFin||0); });
+    const gTot = totG===0?DASH:`<span style="color:${gColor(totG)}">${(totG>=0?"+":"")+fmtCLP(totG)}</span>`;
+    body.innerHTML += `<tr class="hold-total" style="font-weight:700;border-top:2px solid var(--rule);background:var(--surface-2)"><td colspan="4" style="text-transform:uppercase;letter-spacing:.06em;font-size:11px;color:var(--ink-muted)">Ganancia total</td><td class="right num">${totS?fmtCLP(totS):DASH}</td><td class="right num">${gTot}</td><td></td><td></td></tr>`;
+  })();
 
   /* Toggle por doble clic en la fila condensada (ignora clic en Quitar). */
   body.querySelectorAll("tr.hold-main").forEach(tr=>{
@@ -2351,11 +2375,12 @@ function parseMiles(str){ const d=String(str).replace(/[^\d]/g,""); return d?par
 const LOAN_SISTEMAS = {
   frances: "Francés (cuota fija)",
   lineal:  "Lineal (amortización fija)",
-  bullet:  "Bullet (interés periódico, capital al final)"
+  bullet:  "Bullet (interés periódico, capital al final)",
+  gracia_frances: "Gracia + Francés (solo interés, luego cuota fija)"
 };
 
 function addLoan(){
-  STATE.loans.push({ id:++STATE.loanSeq, contraparte:"", monto:0, tasa:0, plazo:12, fecha:hoyISO(), sistema:"frances" });
+  STATE.loans.push({ id:++STATE.loanSeq, contraparte:"", monto:0, tasa:0, plazo:12, fecha:hoyISO(), sistema:"frances", gracia:12 });
   renderPrestamos();
 }
 function removeLoan(id){ STATE.loans=STATE.loans.filter(l=>l.id!==id); delete STATE.loanExpanded[id]; renderPrestamos(); }
@@ -2374,6 +2399,15 @@ function amortizacion(loan){
     const amort=P/n;
     for(let k=1;k<=n;k++){ const interes=saldo*i, cuota=amort+interes; saldo=Math.max(0,saldo-amort); totalInteres+=interes;
       filas.push({k,cuota,interes,amort,saldo}); }
+  } else if(loan.sistema==="gracia_frances"){
+    // Dos períodos: (i) g meses de gracia (solo interés sobre el capital total),
+    // (ii) los meses restantes en sistema francés sobre el capital original.
+    const g=Math.min(n, Math.max(0, Math.round(toNum(loan.gracia)||0)));
+    for(let k=1;k<=g;k++){ const interes=P*i; totalInteres+=interes; filas.push({k,cuota:interes,interes,amort:0,saldo:P}); }
+    const nf=n-g;
+    if(nf>0){ cuotaFija = i>0 ? P*i/(1-Math.pow(1+i,-nf)) : P/nf; saldo=P;
+      for(let k=g+1;k<=n;k++){ const interes=saldo*i, amort=cuotaFija-interes; saldo=Math.max(0,saldo-amort); totalInteres+=interes;
+        filas.push({k,cuota:cuotaFija,interes,amort,saldo}); } }
   } else { // bullet
     for(let k=1;k<=n;k++){ const interes=P*i; const esUlt=(k===n); const amort=esUlt?P:0; const cuota=interes+amort;
       saldo=esUlt?0:P; totalInteres+=interes; filas.push({k,cuota,interes,amort,saldo}); }
@@ -2435,32 +2469,62 @@ function renderPrestamos(){
       <td class="right num" style="font-weight:600">${m.totalInteres>0?fmtCLP(m.totalInteres):DASH}</td>
       <td class="right num">${m.rentPeriodo===null?DASH:nf2.format(m.rentPeriodo*100)+"%"}</td>
       <td class="right num" style="font-weight:600">${m.rentMensual===null?DASH:nf2.format(m.rentMensual*100)+"%"}</td>
-      <td style="white-space:nowrap"><button class="btn ghost sm l-amort" type="button">${STATE.loanExpanded[l.id]?"Ocultar":"Ver tabla"}</button> <button class="btn ghost sm l-del" type="button">Quitar</button></td>
+      <td style="white-space:nowrap"><button class="btn ghost sm l-amort" type="button">${STATE.loanExpanded[l.id]?"Ocultar":"Ver tabla"}</button> <button class="btn ghost sm l-contrato-edit" type="button" title="Editar los datos legales del contrato (partes, RUTs, personería)">Datos contrato</button> <button class="btn ghost sm l-contrato" type="button" title="Descargar el contrato (Reconocimiento de deuda) en PDF">Contrato PDF</button> <button class="btn ghost sm l-del" type="button">Quitar</button></td>
     </tr>`;
     let filaAmort="";
     if(STATE.loanExpanded[l.id]){
       const a=amortizacion(l);
       // Semilla editable: si no hay ediciones o cambió el n° de períodos, regenerar desde la propuesta.
-      if(!Array.isArray(l.amortEdit)||l.amortEdit.length!==a.filas.length){ l.amortEdit=a.filas.map(f=>({k:f.k,cuota:f.cuota,interes:f.interes,amort:f.amort})); }
+      if(!Array.isArray(l.amortEdit)||l.amortEdit.length!==a.filas.length){ l.amortEdit=a.filas.map(f=>({k:f.k,cuota:f.cuota,interes:f.interes,amort:f.amort,_ord:[]})); }
+      const iniL=parseISOd(l.fecha);
       const filas=loanSchedule(l);
       const totalCuota=filas.reduce((s,f)=>s+(toNum(f.cuota)||0),0);
       const totalInt=filas.reduce((s,f)=>s+(toNum(f.interes)||0),0);
       const totalAmort=filas.reduce((s,f)=>s+(toNum(f.amort)||0),0);
       const inp=(cls,val)=>`<input type="text" inputmode="numeric" class="${cls} num" style="width:118px;text-align:right;font-size:12px" value="${val!=null&&val!==""?nfInt.format(Math.round(toNum(val)||0)):""}">`;
-      const rows=filas.map((f,idx)=>`<tr data-k="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${f.k}</td><td style="text-align:right">${inp("am-cuota",f.cuota)}</td><td style="text-align:right">${inp("am-interes",f.interes)}</td><td style="text-align:right">${inp("am-amort",f.amort)}</td><td style="text-align:right" class="num am-saldo">${fmtCLP(f.saldo)}</td></tr>`).join("");
+      const rows=filas.map((f,idx)=>`<tr data-k="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${f.k}</td><td style="text-align:center;color:var(--ink-muted);white-space:nowrap">${iniL?fmtFechaCorta(addMeses(iniL,f.k)):DASH}</td><td style="text-align:right">${inp("am-cuota",f.cuota)}</td><td style="text-align:right">${inp("am-interes",f.interes)}</td><td style="text-align:right">${inp("am-amort",f.amort)}</td><td style="text-align:right" class="num am-saldo">${fmtCLP(f.saldo)}</td></tr>`).join("");
       const cuadraAmort=Math.abs(totalAmort-m.P)<=Math.max(1,m.P*0.001);
       filaAmort=`<tr class="amort-row"><td colspan="${LOAN_COLS.length}" style="background:var(--surface-2);padding:12px 16px">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
           <div style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--ink-muted)">Tabla de amortización (editable) — ${escHtml(l.contraparte||"préstamo")} · ${escHtml(LOAN_SISTEMAS[l.sistema])}</div>
-          <button class="btn ghost sm l-reset" type="button" title="Descartar ediciones y regenerar la propuesta">↻ Recalcular propuesta</button>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${l.sistema==="gracia_frances"?`<span style="font-size:11px;color:var(--ink-muted)">Meses de gracia (solo interés):</span><input type="number" min="0" max="${m.n||0}" step="1" class="l-gracia num" style="width:56px;text-align:right;font-size:12px" value="${l.gracia!=null?l.gracia:0}">`:""}
+            <button class="btn ghost sm l-reset" type="button" title="Descartar ediciones y regenerar la propuesta">↻ Recalcular propuesta</button>
+          </div>
         </div>
-        ${a.filas.length?`<table class="data" style="width:auto;min-width:560px"><thead><tr><th class="right no-sort">Período</th><th class="right no-sort">Cuota</th><th class="right no-sort">Interés</th><th class="right no-sort">Amortización</th><th class="right no-sort">Saldo</th></tr></thead><tbody>${rows}</tbody>
-          <tfoot><tr style="font-weight:600;border-top:2px solid var(--rule)"><td style="text-align:right">Total</td><td style="text-align:right" class="num">${fmtCLP(totalCuota)}</td><td style="text-align:right" class="num">${fmtCLP(totalInt)}</td><td style="text-align:right" class="num" style="color:${cuadraAmort?'inherit':'#B03A3A'}">${fmtCLP(totalAmort)}</td><td style="text-align:right">—</td></tr></tfoot></table>
-          <p style="font-size:11px;color:var(--ink-subtle);margin-top:8px;font-family:var(--font-serif);font-style:italic">Edita cualquier celda de cuota, interés o amortización; el saldo se recalcula solo (saldo anterior − amortización). ${cuadraAmort?"La amortización cuadra con el capital.":`<span style="color:#B03A3A">La amortización suma ${fmtCLP(totalAmort)} y el capital es ${fmtCLP(m.P)} — revisa las cifras.</span>`}</p>`
+        ${a.filas.length?`<table class="data" style="width:auto;min-width:620px"><thead><tr><th class="right no-sort">Período</th><th class="no-sort" style="text-align:center">Fecha venc.</th><th class="right no-sort">Cuota total</th><th class="right no-sort">Interés</th><th class="right no-sort">Amortización</th><th class="right no-sort">Saldo</th></tr></thead><tbody>${rows}</tbody>
+          <tfoot><tr style="font-weight:600;border-top:2px solid var(--rule)"><td colspan="2" style="text-align:right">Total</td><td style="text-align:right" class="num ft-cuota">${fmtCLP(totalCuota)}</td><td style="text-align:right" class="num ft-interes">${fmtCLP(totalInt)}</td><td class="num ft-amort" style="text-align:right;color:${cuadraAmort?'inherit':'#B03A3A'}">${fmtCLP(totalAmort)}</td><td style="text-align:right">—</td></tr></tfoot></table>
+          <p style="font-size:11px;color:var(--ink-subtle);margin-top:8px;font-family:var(--font-serif);font-style:italic">Completa dos de las tres columnas (cuota total, interés, amortización) y la tercera se calcula sola por diferencia; las fechas de vencimiento se generan desde la fecha de otorgamiento y el saldo se recalcula automáticamente. <span class="am-cuadra-msg">${cuadraAmort?"La amortización cuadra con el capital.":`<span style="color:#B03A3A">La amortización suma ${fmtCLP(totalAmort)} y el capital es ${fmtCLP(m.P)} — revisa las cifras.</span>`}</span></p>`
           :'<span style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted)">Ingresa monto, tasa y plazo para generar la tabla.</span>'}
       </td></tr>`;
     }
-    return filaMain+filaAmort;
+    let filaContrato="";
+    if(STATE.loanContratoOpen && STATE.loanContratoOpen[l.id]){
+      const c=loanContrato(l);
+      const fi=(cls,label,val)=>`<label style="display:flex;flex-direction:column;gap:3px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted);font-family:var(--font-label)">${escHtml(label)}<input type="text" class="${cls}" style="width:100%;font-size:12.5px;padding:5px 7px;border:1.5px solid var(--navy);background:var(--cream);font-family:var(--font-ui);text-transform:none;letter-spacing:0;color:var(--ink)" value="${escAttr(val||"")}"></label>`;
+      const ta=(cls,label,val)=>`<label style="display:flex;flex-direction:column;gap:3px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted);font-family:var(--font-label);grid-column:1/-1">${escHtml(label)}<textarea class="${cls}" rows="4" style="width:100%;font-size:12px;padding:6px 8px;border:1.5px solid var(--navy);background:var(--cream);font-family:var(--font-ui);text-transform:none;letter-spacing:0;color:var(--ink);resize:vertical">${escHtml(val||"")}</textarea></label>`;
+      filaContrato=`<tr class="contrato-row" data-cid="${l.id}"><td colspan="${LOAN_COLS.length}" style="background:var(--surface-2);padding:14px 16px">
+        <div style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--ink-muted);margin-bottom:10px">Datos del contrato — Deudora. La Acreedora (Sikerei) y los textos legales se rellenan automáticamente; edítalos si aplica.</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px;max-width:920px">
+          ${fi("ct-deudoraNombre","Razón social Deudora",c.deudoraNombre)}
+          ${fi("ct-deudoraRut","RUT Deudora",c.deudoraRut)}
+          ${fi("ct-lugar","Lugar de suscripción",c.lugar)}
+          <div></div>
+          ${fi("ct-dRepAtrato","Trato A (don/doña)",c.dRepAtrato)}
+          ${fi("ct-dRepAnombre","Apoderado Clase A",c.dRepAnombre)}
+          ${fi("ct-dRepArut","RUT Apoderado A",c.dRepArut)}
+          ${fi("ct-dRepAcargo","Cargo A",c.dRepAcargo)}
+          ${fi("ct-dRepBtrato","Trato B (don/doña)",c.dRepBtrato)}
+          ${fi("ct-dRepBnombre","Apoderado Clase B",c.dRepBnombre)}
+          ${fi("ct-dRepBrut","RUT Apoderado B",c.dRepBrut)}
+          ${fi("ct-dRepBcargo","Cargo B",c.dRepBcargo)}
+          ${ta("ct-persDeudora","Personería Deudora",c.persDeudora)}
+          ${ta("ct-persAcreedora","Personería Acreedora",c.persAcreedora)}
+        </div>
+        <p style="font-size:11px;color:var(--ink-subtle);margin-top:8px;font-family:var(--font-serif);font-style:italic">Estos datos alimentan el PDF del contrato y se guardan por préstamo.</p>
+      </td></tr>`;
+    }
+    return filaMain+filaAmort+filaContrato;
   }).join("");
 
   body.querySelectorAll("tr[data-id]").forEach(tr=>{
@@ -2472,17 +2536,25 @@ function renderPrestamos(){
     tr.querySelector(".l-tasa").addEventListener("input",e=>{ l.tasa=e.target.value===""?0:toNum(e.target.value)||0; l.amortEdit=null; });
     tr.querySelector(".l-tasa").addEventListener("blur",()=>refreshLoanRow(id));
     tr.querySelector(".l-plazo").addEventListener("input",e=>{ l.plazo=e.target.value===""?0:Math.max(0,Math.round(toNum(e.target.value)||0)); l.amortEdit=null; refreshLoanRow(id); });
-    tr.querySelector(".l-sistema").addEventListener("change",e=>{ l.sistema=e.target.value; l.amortEdit=null; renderPrestamos(); });
+    tr.querySelector(".l-sistema").addEventListener("change",e=>{ l.sistema=e.target.value; if(l.sistema==="gracia_frances"&&!(l.gracia>0)) l.gracia=Math.min(12, l.plazo||12); l.amortEdit=null; renderPrestamos(); });
     tr.querySelector(".l-amort").addEventListener("click",()=>{ STATE.loanExpanded[id]=!STATE.loanExpanded[id]; renderPrestamos(); });
     tr.querySelector(".l-del").addEventListener("click",()=>removeLoan(id));
+    tr.querySelector(".l-contrato").addEventListener("click",()=>generarContratoPDF(l));
+    tr.querySelector(".l-contrato-edit").addEventListener("click",()=>{ STATE.loanContratoOpen=STATE.loanContratoOpen||{}; STATE.loanContratoOpen[id]=!STATE.loanContratoOpen[id]; renderPrestamos(); });
     const amortRow=tr.nextElementSibling;
     if(amortRow&&amortRow.classList.contains("amort-row")){
       const reset=amortRow.querySelector(".l-reset"); if(reset) reset.addEventListener("click",()=>{ l.amortEdit=null; renderPrestamos(); });
+      const gr=amortRow.querySelector(".l-gracia"); if(gr) gr.addEventListener("change",e=>{ l.gracia=Math.max(0,Math.round(toNum(e.target.value)||0)); l.amortEdit=null; renderPrestamos(); });
       amortRow.querySelectorAll("tr[data-k]").forEach(dr=>{
         const k=+dr.dataset.k;
-        const bind=(cls,prop)=>{ const el=dr.querySelector(cls); if(!el)return; el.addEventListener("input",e=>{ if(!l.amortEdit||!l.amortEdit[k])return; l.amortEdit[k][prop]=parseMiles(e.target.value); }); el.addEventListener("blur",()=>renderPrestamos()); };
+        const bind=(cls,prop)=>{ const el=dr.querySelector(cls); if(!el)return; el.addEventListener("input",e=>{ if(!l.amortEdit||!l.amortEdit[k])return; l.amortEdit[k][prop]=parseMiles(e.target.value); loanCompletarFila(l.amortEdit[k],prop); syncAmortTable(l,amortRow,e.target); }); el.addEventListener("blur",()=>renderPrestamos()); };
         bind(".am-cuota","cuota"); bind(".am-interes","interes"); bind(".am-amort","amort");
       });
+    }
+    const contratoRow=document.querySelector(`#loanBody tr.contrato-row[data-cid="${id}"]`);
+    if(contratoRow){
+      const bindC=(cls,key)=>{ const el=contratoRow.querySelector(cls); if(!el)return; el.addEventListener("input",e=>{ l.contrato=l.contrato||{}; l.contrato[key]=e.target.value; }); };
+      ["deudoraNombre","deudoraRut","lugar","dRepAtrato","dRepAnombre","dRepArut","dRepAcargo","dRepBtrato","dRepBnombre","dRepBrut","dRepBcargo","persDeudora","persAcreedora"].forEach(k=>bindC(".ct-"+k,k));
     }
   });
   renderLoanSummary(); renderCartera();
@@ -2512,6 +2584,207 @@ function loanInteresRango(loan,fromTime,toTime){
   const a=amortizacion(loan), ini=parseISOd(loan.fecha); if(!ini)return 0;
   let s=0; a.filas.forEach(f=>{ const t=addMeses(ini,f.k).getTime(); if(t>=fromTime&&t<toTime) s+=f.interes; });
   return s;
+}
+/* ============================================================
+   PRÉSTAMOS — completar por diferencia + contrato PDF
+   ============================================================ */
+/* Regla de completado por diferencia sobre la invariante Cuota = Interés + Amortización.
+   Se recuerdan los dos últimos campos editados; el tercero se deriva:
+   - cuota total + amortización  → interés      = cuota − amortización
+   - cuota total + interés       → amortización = cuota − interés
+   - amortización + interés      → cuota total  = amortización + interés */
+function loanCompletarFila(row, edited){
+  row._ord = [edited].concat((Array.isArray(row._ord)?row._ord:[]).filter(p=>p!==edited)).slice(0,2);
+  const k=row._ord, has=p=>k.includes(p);
+  const C=toNum(row.cuota)||0, I=toNum(row.interes)||0, A=toNum(row.amort)||0;
+  if(has('cuota')&&has('amort'))        row.interes = C - A;
+  else if(has('cuota')&&has('interes')) row.amort   = C - I;
+  else if(has('amort')&&has('interes')) row.cuota   = A + I;
+}
+function syncAmortTable(l, amortRow, focusedEl){
+  if(!amortRow) return;
+  const P=toNum(l.monto)||0; let saldo=P, tC=0,tI=0,tA=0;
+  amortRow.querySelectorAll("tr[data-k]").forEach(dr=>{
+    const k=+dr.dataset.k, row=l.amortEdit&&l.amortEdit[k]; if(!row) return;
+    const C=toNum(row.cuota)||0, I=toNum(row.interes)||0, A=toNum(row.amort)||0;
+    saldo-=A; tC+=C; tI+=I; tA+=A;
+    const set=(cls,val)=>{ const el=dr.querySelector(cls); if(el&&el!==focusedEl) el.value = val?nfInt.format(Math.round(val)):""; };
+    set(".am-cuota",C); set(".am-interes",I); set(".am-amort",A);
+    const sc=dr.querySelector(".am-saldo"); if(sc) sc.textContent=fmtCLP(Math.max(0,saldo));
+  });
+  const q=c=>amortRow.querySelector(c);
+  if(q(".ft-cuota")) q(".ft-cuota").textContent=fmtCLP(tC);
+  if(q(".ft-interes")) q(".ft-interes").textContent=fmtCLP(tI);
+  const cuadra=Math.abs(tA-P)<=Math.max(1,P*0.001);
+  if(q(".ft-amort")){ const el=q(".ft-amort"); el.textContent=fmtCLP(tA); el.style.color=cuadra?"inherit":"#B03A3A"; }
+  const msg=q(".am-cuadra-msg"); if(msg){ msg.innerHTML=cuadra?"La amortización cuadra con el capital.":`<span style="color:#B03A3A">La amortización suma ${fmtCLP(tA)} y el capital es ${fmtCLP(P)} — revisa las cifras.</span>`; }
+}
+
+/* Convierte un entero (0..999.999.999.999) a palabras en español. */
+function numeroAPalabras(num){
+  num=Math.round(Math.abs(toNum(num)||0));
+  if(num===0) return "cero";
+  const U=["","uno","dos","tres","cuatro","cinco","seis","siete","ocho","nueve","diez","once","doce","trece","catorce","quince","dieciséis","diecisiete","dieciocho","diecinueve","veinte","veintiuno","veintidós","veintitrés","veinticuatro","veinticinco","veintiséis","veintisiete","veintiocho","veintinueve"];
+  const D=["","","","treinta","cuarenta","cincuenta","sesenta","setenta","ochenta","noventa"];
+  const C=["","ciento","doscientos","trescientos","cuatrocientos","quinientos","seiscientos","setecientos","ochocientos","novecientos"];
+  function sec(nn){ let t=""; const c=Math.floor(nn/100), r=nn%100;
+    if(c===1&&r===0) t="cien"; else if(c>0) t=C[c];
+    if(r>0){ if(t)t+=" "; if(r<30) t+=U[r]; else { const d=Math.floor(r/10), u=r%10; t+=D[d]; if(u>0) t+=" y "+U[u]; } }
+    return t; }
+  const millones=Math.floor(num/1000000), miles=Math.floor((num%1000000)/1000), resto=num%1000;
+  let p="";
+  if(millones>0) p += (millones===1?"un millón":sec(millones)+" millones");
+  if(miles>0){ if(p)p+=" "; p += (miles===1?"mil":sec(miles)+" mil"); }
+  if(resto>0){ if(p)p+=" "; p += sec(resto); }
+  return p.trim();
+}
+
+/* Datos legales del contrato (Acreedora Sikerei + plantilla Deudora). Todo editable por préstamo. */
+const CONTRATO_ACREEDORA = {
+  nombre:"COMERCIALIZADORA SIKEREI SPA", rut:"76.195.762-7",
+  repA:"Pedro Costabal Vicuña", repArut:"17.090.362-5", repAcargo:"CEO",
+  repB:"Sergio Andrés Domínguez Nieto", repBrut:"15.668.250-0", repBcargo:"CFO",
+  domicilio:"Avenida Vitacura N° 3634, comuna de Vitacura, Región Metropolitana"
+};
+
+/* Valores por defecto de los datos del contrato de un préstamo (plantilla Darkstore/Sikerei
+   del contrato de referencia). Se combinan con las ediciones guardadas en loan.contrato. */
+function contratoDefaults(loan){
+  const nombre=(loan.contraparte||"Darkstore SpA");
+  const A=CONTRATO_ACREEDORA;
+  return {
+    deudoraNombre: nombre, deudoraRut:"77.371.171-2",
+    dRepAtrato:"don",  dRepAnombre:"Benjamín Ignacio Arancibia Campos", dRepArut:"18.126.956-1", dRepAcargo:"CEO",
+    dRepBtrato:"doña", dRepBnombre:"Florencia Soto Nenadovich",         dRepBrut:"19.079.291-9", dRepBcargo:"CFO",
+    lugar:"Santiago de Chile",
+    persAcreedora:"La personería de don "+A.repA+" y de don "+A.repB+" para representar conjuntamente a Comercializadora Sikerei SpA consta de la escritura pública de fecha 17 de octubre de 2024, otorgada en la Notaría de Santiago de don Francisco Javier Leiva Carvajal, Repertorio N° 65.684, que redujo a escritura pública el acta de la Sesión Extraordinaria de Directorio de la Sociedad celebrada con fecha 10 de octubre de 2024, inscrita a fojas 90.597 número 36.361 del Registro de Comercio de Santiago correspondiente al año 2024. Conforme a dichos poderes, un Apoderado Clase A actuando conjuntamente con un Apoderado Clase B representa a la Sociedad con facultades suficientes para celebrar el presente contrato. Dicha personería no se inserta por ser conocida de las partes.",
+    persDeudora:"La personería de don Benjamín Ignacio Arancibia Campos (Apoderado Clase A) y de doña Florencia Soto Nenadovich (Apoderada Clase B) para representar conjuntamente a "+nombre.toUpperCase()+" consta de la escritura pública de fecha 26 de julio de 2024, otorgada en la Segunda Notaría de Santiago de don Francisco Javier Leiva Carvajal, Repertorio N° 45.204-2024, que redujo a escritura pública el acta de la Sesión Extraordinaria de Directorio de la Sociedad celebrada con fecha 18 de julio de 2024. La Sociedad se encuentra inscrita a fojas 2.823 número 1.302 del Registro de Comercio de Santiago correspondiente al año 2022. Conforme a dichos poderes, tratándose de operaciones cuya cuantía sea superior a cien millones de pesos, la Sociedad es representada por un Apoderado Clase A actuando conjuntamente con un Apoderado Clase B, quienes cuentan con facultades suficientes para celebrar el presente contrato. Dicha personería no se inserta por ser conocida de las partes."
+  };
+}
+function loanContrato(loan){ return Object.assign(contratoDefaults(loan), loan.contrato||{}); }
+
+/* Genera y descarga el contrato "Reconocimiento de Deuda" en PDF con los datos del préstamo. */
+function generarContratoPDF(loan){
+  if(!(window.jspdf&&window.jspdf.jsPDF)){ alert("No se pudo cargar el generador de PDF. Revisa tu conexión e inténtalo de nuevo."); return; }
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:"pt",format:"a4"});
+  const PW=doc.internal.pageSize.getWidth(), PH=doc.internal.pageSize.getHeight(), M=56;
+  let y=M;
+  const A=CONTRATO_ACREEDORA, c=loanContrato(loan);
+  const DEU=(c.deudoraNombre||"Deudora").toUpperCase();
+  const P=toNum(loan.monto)||0, tasa=toNum(loan.tasa)||0, n=Math.max(0,Math.round(toNum(loan.plazo)||0));
+  const ini=parseISOd(loan.fecha)||new Date();
+  const primera=addMeses(ini,1), venc=addMeses(ini,n);
+  const tasaTxt=String(tasa).replace(".",",");
+  const filas=loanSchedule(loan);
+  let graceRows=0; for(const f of filas){ if((f.amort||0)===0 && (f.interes||0)>0) graceRows++; else break; }
+  const amortRows=filas.length-graceRows;
+  const tieneGracia = graceRows>0 && amortRows>0;
+  const sisText={
+    frances:"sistema francés de cuota fija (capital más intereses sobre saldo insoluto)",
+    lineal:"sistema de amortización lineal, con abono de capital constante más intereses sobre el saldo insoluto",
+    bullet:"pago de intereses en cada período y amortización total del capital al vencimiento (bullet)",
+    gracia_frances:"un período de gracia seguido del sistema francés de cuota fija"
+  }[loan.sistema]||"el sistema de amortización pactado";
+
+  const ensure=s=>{ if(y+s>PH-M){ doc.addPage(); y=M; } };
+  const para=(txt,o)=>{ o=o||{}; doc.setFont("times",o.bold?"bold":"normal"); const fs=o.size||10.5; doc.setFontSize(fs);
+    const lh=fs*1.35; const lines=doc.splitTextToSize(txt,PW-2*M);
+    lines.forEach(ln=>{ ensure(lh); doc.text(ln,o.align==="center"?PW/2:M,y,{align:o.align||"left"}); y+=lh; });
+    y+=(o.gap!=null?o.gap:6); };
+  const heading=txt=>{ ensure(24); doc.setFont("times","bold"); doc.setFontSize(11.5); doc.text(txt,M,y); y+=16; };
+  let ci=1; const clause=(body,o)=>{ para("5."+ci+". "+body,o); ci++; };
+
+  doc.setFont("times","normal"); doc.setFontSize(10.5);
+  doc.text("Santiago, "+fmtFechaLarga(ini),PW-M,y,{align:"right"}); y+=26;
+  para("RECONOCIMIENTO DE DEUDA",{bold:true,size:15,align:"center",gap:4});
+  para("Operación entre Partes Relacionadas — "+A.nombre+" / "+DEU,{size:9.5,align:"center",gap:16});
+
+  heading("I. COMPARECIENTES");
+  para("Comparecen, por una parte, "+DEU+", RUT "+c.deudoraRut+", sociedad por acciones constituida bajo las leyes de la República de Chile, representada por "+c.dRepAtrato+" "+c.dRepAnombre+", cédula de identidad N°"+c.dRepArut+", en su calidad de Apoderado Clase A y "+c.dRepBtrato+" "+c.dRepBnombre+", cédula de identidad N°"+c.dRepBrut+", en su calidad de Apoderado Clase B, en adelante la “Deudora”; y, por la otra parte, "+A.nombre+", sociedad por acciones del giro de su denominación, RUT N° "+A.rut+", representada, según se acreditará, por don "+A.repA+", cédula nacional de identidad N° "+A.repArut+", en su calidad de Apoderado Clase A, y por don "+A.repB+", cédula nacional de identidad N° "+A.repBrut+", en su calidad de Apoderado Clase B, todos domiciliados para estos efectos en "+A.domicilio+", en adelante la “Acreedora”. Ambas partes, en adelante también conjuntamente denominadas las “Partes”.",{gap:12});
+
+  heading("II. ANTECEDENTES");
+  para("Con fecha "+fmtFechaLarga(ini)+", la Acreedora entregó a la Deudora la suma de $ "+nfInt.format(P)+" ("+numeroAPalabras(P)+" pesos chilenos), a título de mutuo de dinero, con el objeto de financiar las necesidades operacionales y de capital de trabajo de la Deudora. Mediante el presente instrumento, la Deudora reconoce expresamente la existencia, legitimidad y exigibilidad de dicha obligación en los términos que se detallan a continuación.",{gap:12});
+
+  heading("III. CONDICIONES FINANCIERAS");
+  para("Las condiciones del presente reconocimiento de deuda son las siguientes:",{size:9.5,gap:6});
+  const cond=[
+    ["Deudora", DEU+", RUT "+c.deudoraRut],
+    ["Acreedora", A.nombre+" — RUT "+A.rut],
+    ["Monto del capital", "$ "+nfInt.format(P)+" ("+numeroAPalabras(P)+" pesos chilenos)"],
+    ["Moneda","Pesos chilenos (CLP)"],
+    ["Tasa de interés", tasaTxt+"% mensual sobre saldo insoluto"],
+    ["Plazo total", n+" meses desde la fecha de suscripción"],
+    ["Fecha de vencimiento final", fmtFechaLarga(venc)]
+  ];
+  if(tieneGracia){
+    cond.push(["Período 1 (meses 1–"+graceRows+")","Solo intereses — sin amortización de capital"]);
+    cond.push(["Período 2 (meses "+(graceRows+1)+"–"+n+")",amortRows+" cuotas iguales de capital + intereses (sistema francés)"]);
+  } else {
+    cond.push(["Sistema de amortización", LOAN_SISTEMAS[loan.sistema]||"—"]);
+  }
+  cond.push(["Fecha de primera cuota", fmtFechaLarga(primera)]);
+  cond.push(["Fecha de cuotas siguientes","El día "+ini.getDate()+" de cada mes calendario"]);
+  doc.autoTable({ startY:y, theme:"grid",
+    styles:{font:"times",fontSize:9.5,cellPadding:4,lineColor:[30,47,77],lineWidth:.5,textColor:[27,36,49]},
+    columnStyles:{0:{fontStyle:"bold",cellWidth:180,fillColor:[240,244,248]},1:{cellWidth:PW-2*M-180}},
+    margin:{left:M,right:M}, body:cond });
+  y=doc.lastAutoTable.finalY+18;
+
+  heading("IV. TABLA DE AMORTIZACIÓN");
+  if(tieneGracia){
+    para("El presente crédito opera bajo un esquema de dos períodos diferenciados: (i) durante los primeros "+graceRows+" meses (cuotas N°1 a N°"+graceRows+") la Deudora pagará exclusivamente intereses sobre el capital total insoluto, sin amortización; y (ii) durante los siguientes "+amortRows+" meses (cuotas N°"+(graceRows+1)+" a N°"+n+") se aplicará el sistema francés de cuota fija sobre el capital original. Los valores en pesos chilenos (CLP) son referenciales y se recalcularán ante prepagos parciales.",{size:9.5,gap:8});
+  } else {
+    para("Los valores en pesos chilenos (CLP) son referenciales y se recalcularán ante prepagos parciales. Las fechas de vencimiento se generan a partir de la fecha de suscripción.",{size:9.5,gap:8});
+  }
+  const cuerpo=filas.map(f=>{ const per=(f.amort||0)>0?"Amortización":((f.interes||0)>0?"Solo interés":"—");
+    return [ String(f.k), per, fmtFechaCorta(addMeses(ini,f.k)),
+      (f.amort||0)>0?nfInt.format(Math.round(f.amort)):"—", nfInt.format(Math.round(f.interes)),
+      nfInt.format(Math.round(f.cuota)), nfInt.format(Math.round(Math.max(0,f.saldo))) ]; });
+  doc.autoTable({ startY:y,
+    head:[["N°","Período","Fecha Vencimiento","Capital","Interés","Cuota Total","Saldo Insoluto"]],
+    body:cuerpo, theme:"grid",
+    headStyles:{fillColor:[30,47,77],textColor:[255,255,255],fontStyle:"bold",fontSize:8,font:"times",halign:"right"},
+    styles:{font:"times",fontSize:8,cellPadding:3,halign:"right",lineColor:[200,208,220],lineWidth:.4,textColor:[27,36,49]},
+    columnStyles:{0:{halign:"center"},1:{halign:"left"},2:{halign:"center"}},
+    margin:{left:M,right:M} });
+  y=doc.lastAutoTable.finalY+18;
+
+  heading("V. CLÁUSULAS");
+  clause("Intereses. Los intereses se calcularán sobre el saldo de capital insoluto a la tasa mensual del "+tasaTxt+"%, devengándose día a día.",{gap:6});
+  if(tieneGracia){
+    clause("Período de gracia. Durante los primeros "+graceRows+" meses contados desde la fecha de suscripción del presente instrumento, la Deudora pagará únicamente los intereses devengados en cada período mensual, sin que exista obligación de amortizar capital. El capital total permanecerá insoluto al término de dicho período y comenzará a amortizarse a partir de la cuota N°"+(graceRows+1)+".",{gap:6});
+  } else {
+    clause("Amortización. El capital e intereses se pagarán conforme al "+sisText+". La primera cuota vence el "+fmtFechaLarga(primera)+" y las cuotas siguientes el mismo día de cada mes calendario, hasta el vencimiento final el "+fmtFechaLarga(venc)+".",{gap:6});
+  }
+  clause("Prepago. La Deudora podrá prepagar total o parcialmente el capital adeudado en cualquier momento, sin multa ni penalización, debiendo notificar a la Acreedora con al menos 5 días hábiles de anticipación. El prepago parcial reducirá el saldo insoluto y dará lugar a una nueva tabla de amortización.",{gap:6});
+  clause("Mora. El no pago oportuno de cualquier cuota devengará intereses moratorios equivalentes al máximo convencional permitido por la ley chilena vigente a la fecha del incumplimiento, calculados sobre el monto vencido e impago.",{gap:6});
+  clause("Precios de transferencia. Las Partes reconocen que la presente operación constituye una transacción entre partes relacionadas en los términos del artículo 41 E de la Ley sobre Impuesto a la Renta. La tasa pactada ha sido establecida considerando las condiciones de mercado vigentes a la fecha de suscripción. Las Partes se obligan a mantener la documentación de respaldo que acredite el cumplimiento de las normas de precios de transferencia aplicables.",{gap:6});
+  clause("Vencimiento anticipado. La totalidad de la deuda se considerará de plazo vencido y exigible de pleno derecho si: (i) la Deudora incurre en cesación de pagos o es declarada en quiebra; (ii) se presentan dos o más cuotas consecutivas impagas; o (iii) se produce un cambio de control en la Deudora sin consentimiento previo de la Acreedora.",{gap:6});
+  clause("Ley aplicable y jurisdicción. El presente instrumento se rige por las leyes de la República de Chile. Para todos los efectos legales derivados del presente contrato, las Partes fijan domicilio en la ciudad de Santiago y se someten a la jurisdicción de sus Tribunales Ordinarios de Justicia.",{gap:6});
+  clause("Ejecutividad. Las Partes otorgan al presente instrumento el carácter de título ejecutivo, de conformidad con el artículo 438 N°3 del Código de Procedimiento Civil.",{gap:6});
+  clause("Personería. "+c.persAcreedora,{gap:6});
+  para(c.persDeudora,{gap:14});
+
+  para("En fe de lo anterior, las Partes suscriben el presente instrumento en dos ejemplares de un mismo tenor y fecha, en "+(c.lugar||"Santiago de Chile")+", a "+fmtFechaLarga(ini)+".",{gap:22});
+
+  ensure(210);
+  const colW=(PW-2*M-40)/2, x1=M, x2=M+colW+40;
+  const firma=(x,yy,nombre,cargo,rut,empresa)=>{
+    doc.setLineWidth(.6); doc.line(x,yy,x+colW,yy);
+    doc.setFont("times","bold"); doc.setFontSize(10); doc.text(nombre,x,yy+14);
+    doc.setFont("times","normal"); doc.setFontSize(9);
+    doc.text(cargo,x,yy+27); doc.text(rut,x,yy+39); doc.text(empresa,x,yy+51);
+  };
+  let fy=y+30;
+  firma(x1,fy,c.dRepAnombre,c.dRepAcargo,c.dRepArut,DEU);
+  firma(x2,fy,A.repA,A.repAcargo,A.repArut,A.nombre);
+  fy+=90; ensure(90);
+  firma(x1,fy,c.dRepBnombre,c.dRepBcargo,c.dRepBrut,DEU);
+  firma(x2,fy,A.repB,A.repBcargo,A.repBrut,A.nombre);
+
+  const nombreArch="Reconocimiento de deuda - "+((c.deudoraNombre||"prestamo").replace(/[\\/:*?"<>|]/g,"").slice(0,60))+".pdf";
+  doc.save(nombreArch);
 }
 
 function renderLoanSummary(){
