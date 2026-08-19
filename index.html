@@ -741,20 +741,9 @@ function mostrarLogin(mensajeError){
   document.getElementById("loginOverlay").style.display = "flex";
   const errBox = document.getElementById("loginError");
   errBox.textContent = mensajeError || "";
-  errBox.style.display = mensajeError ? "block" : "none"; mostrarBotonVistaPrevia();
+  errBox.style.display = mensajeError ? "block" : "none";
 }
 function ocultarLogin(){ document.getElementById("loginOverlay").style.display = "none"; }
-/* Respaldo: si el login de Google no puede cargar (p. ej. bloqueado en la vista previa),
-   ofrece entrar en modo vista previa. El control real de datos vive en el Apps Script. */
-function mostrarBotonVistaPrevia(){
-  if(document.getElementById("btnVistaPrevia")) return;
-  const cont=document.getElementById("loginOverlay"); if(!cont) return;
-  const b=document.createElement("button");
-  b.id="btnVistaPrevia"; b.type="button"; b.textContent="Continuar en modo vista previa";
-  b.style.cssText="margin-top:6px;padding:11px 20px;border:1.5px solid #FBF7EF;background:transparent;color:#FBF7EF;font-family:'Libre Franklin',sans-serif;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:600;cursor:pointer";
-  b.addEventListener("click",()=>{ try{ arrancarApp(); }catch(e){ ocultarLogin(); initNav(); renderPrestamos(); } });
-  cont.appendChild(b);
-}
 
 /* Se llama una sola vez, tras login exitoso o si ya había sesión vigente. */
 function arrancarApp(){ ocultarLogin(); initAccesoRBAC(); initNav(); loadAll(); }
@@ -844,7 +833,6 @@ function initLogin(){
   mostrarLogin();
   if(!window.google){
     mostrarLogin("No se pudo cargar el inicio de sesión de Google (bloqueado en este entorno).");
-    mostrarBotonVistaPrevia();
     return;
   }
   if(GOOGLE_CLIENT_ID.indexOf("REEMPLAZAR")===0){
