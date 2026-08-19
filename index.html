@@ -407,8 +407,10 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
       <div class="header-status">
         <div class="status-line" id="statusFecha">Cartera CMF al: —</div>
         <div class="status-line" id="statusActualizado">Actualizado: —</div>
+        <div class="status-line" id="sesionNombre" style="margin-top:6px;font-family:var(--font-serif);font-size:26px;font-weight:600;color:var(--cream);line-height:1.15"></div>
+        <div class="status-line" id="sesionCorreo" style="margin-top:2px;font-size:13px;color:#B7C0CC"></div>
         <div class="status-line" id="roleChip" style="margin-top:7px"></div>
-        <div class="status-line" style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="btnRefresh" style="font-family:var(--font-serif)">Refrescar datos</button><button class="btn sm" id="btnExportXlsx" style="font-family:var(--font-serif)">Exportar a Excel</button><button class="btn sm" id="btnExportPdf" style="font-family:var(--font-serif)">Exportar a PDF</button><button class="btn sm" id="btnLogout" style="font-family:var(--font-serif)">Cerrar sesión</button></div>
+        <div class="status-line" style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="btnRefresh" style="font-family:var(--font-serif)">Refrescar</button><a class="btn sm" id="btnPlanilla" href="https://docs.google.com/spreadsheets/d/1_uzGPM_gVYaefLmPEf2jx0OK_70P0gJ_CtcuUL1sblM/edit?gid=0#gid=0" target="_blank" rel="noopener" style="font-family:var(--font-serif);text-decoration:none;display:inline-flex;align-items:center;gap:6px" title="Abrir la planilla de respaldo en Google Sheets">Planilla <span aria-hidden="true">&#8599;</span></a><button class="btn sm" id="btnExportPdf" style="font-family:var(--font-serif)">Exportar PDF</button><button class="btn sm" id="btnExportXlsx" style="font-family:var(--font-serif)">Exportar Excel</button><button class="btn sm" id="btnLogout" style="font-family:var(--font-serif)">Cambiar de usuario</button></div>
       </div>
     </div>
 
@@ -756,6 +758,7 @@ async function onGoogleCredential(idToken){
     if(!r || !r.ok) throw new Error(r && r.error ? r.error : "Login rechazado");
     setSessionToken(r.token);
     setUserEmail(emailDeIdToken(idToken));
+    setUserName(nombreDeIdToken(idToken));
     arrancarApp();
   }catch(err){
     setSessionToken("");
@@ -776,9 +779,17 @@ async function onGoogleCredential(idToken){
    ============================================================ */
 const ADMIN_EMAILS = ["marialuisa.rey@wildlama.com"]; // <-- correos con permiso de edición (minúsculas)
 const EMAIL_KEY = "wl_email";
+const NAME_KEY  = "wl_nombre";
+/* El rol se determina por el NOMBRE de la cuenta Google: solo María Luisa Rey
+   es Administradora; cualquier otra cuenta entra como Visualizador. */
+const ADMIN_NOMBRES = ["maria luisa rey"];
+function normalizarNombre(s){ return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim(); }
+function getUserName(){ return localStorage.getItem(NAME_KEY)||""; }
+function setUserName(n){ if(n) localStorage.setItem(NAME_KEY, String(n)); }
+function nombreDeIdToken(idToken){ try{ const p=JSON.parse(decodeURIComponent(escape(atob(idToken.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))))); return p.name||""; }catch(e){ return ""; } }
 function getUserEmail(){ return (localStorage.getItem(EMAIL_KEY)||"").toLowerCase(); }
 function setUserEmail(e){ if(e) localStorage.setItem(EMAIL_KEY, String(e).toLowerCase()); }
-function esAdmin(){ const me=getUserEmail(); return !!me && ADMIN_EMAILS.map(x=>String(x).toLowerCase()).indexOf(me)>-1; }
+function esAdmin(){ const n=normalizarNombre(getUserName()); if(n) return ADMIN_NOMBRES.indexOf(n)>-1; const me=getUserEmail(); return !!me && ADMIN_EMAILS.map(x=>String(x).toLowerCase()).indexOf(me)>-1; }
 function emailDeIdToken(idToken){ try{ const p=JSON.parse(decodeURIComponent(escape(atob(idToken.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))))); return (p.email||"").toLowerCase(); }catch(e){ return ""; } }
 
 function injectRbacCSS(){
@@ -807,8 +818,11 @@ function aplicarModoAcceso(){
   const admin=esAdmin();
   document.body.classList.toggle("wl-readonly", !admin);
   const me=getUserEmail()||"(sin sesión)";
+  const nombre=getUserName()||"";
+  const eln=document.getElementById("sesionNombre"); if(eln) eln.textContent=nombre;
+  const elc=document.getElementById("sesionCorreo"); if(elc) elc.textContent=me;
   const chip=document.getElementById("roleChip");
-  if(chip) chip.innerHTML = '<div><span class="wl-role-chip '+(admin?"admin":"viewer")+'">'+(admin?"Administrador":"Lector")+'</span></div><div style="opacity:.85;margin-top:3px">'+me+'</div>';
+  if(chip) chip.innerHTML = '<span class="wl-role-chip '+(admin?"admin":"viewer")+'">'+(admin?"Administrador":"Visualizador")+'</span>';
   const be=document.getElementById("wlBannerEmail"); if(be) be.textContent=me;
   if(!admin) lockRecordInputs();
 }
@@ -826,7 +840,7 @@ function initAccesoRBAC(){
     new MutationObserver(function(){ if(!esAdmin()) lockRecordInputs(); }).observe(b,{childList:true,subtree:true});
   });
   const lo=document.getElementById("btnLogout");
-  if(lo) lo.addEventListener("click",function(){ setSessionToken(""); localStorage.removeItem(EMAIL_KEY); location.reload(); });
+  if(lo) lo.addEventListener("click",function(){ setSessionToken(""); localStorage.removeItem(EMAIL_KEY); localStorage.removeItem(NAME_KEY); location.reload(); });
 }
 
 function initLogin(){
