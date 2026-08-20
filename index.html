@@ -105,6 +105,7 @@ a:hover{color:var(--accent);}
 /* ---------- Header ---------- */
 header.app{background:var(--navy);border-bottom:1px solid var(--navy-deep);}
 header.app .btn{background:transparent;border-color:var(--cream);color:var(--cream);}
+header.app .header-status .btn{padding:4px 9px;font-size:9.5px;letter-spacing:.1em;}
 header.app .btn:hover{background:var(--cream);border-color:var(--cream);color:var(--navy);}
 .header-top{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:20px 0 14px;flex-wrap:wrap;}
 .brand .eyebrow{margin-bottom:6px;color:#D19AA4;}
@@ -407,10 +408,10 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
       <div class="header-status">
         <div class="status-line" id="statusFecha">Cartera CMF al: —</div>
         <div class="status-line" id="statusActualizado">Actualizado: —</div>
-        <div class="status-line" id="sesionNombre" style="margin-top:6px;font-family:var(--font-serif);font-size:26px;font-weight:600;color:var(--cream);line-height:1.15"></div>
-        <div class="status-line" id="sesionCorreo" style="margin-top:2px;font-size:13px;color:#B7C0CC"></div>
-        <div class="status-line" id="roleChip" style="margin-top:7px"></div>
-        <div class="status-line" style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="btnRefresh" style="font-family:var(--font-serif)">Refrescar</button><a class="btn sm" id="btnPlanilla" href="https://docs.google.com/spreadsheets/d/1R1zcNZg_FGTk_ek1F4oFwMEZ1ibrTBJ9CNKgLOCVUac/edit?gid=87067894#gid=87067894" target="_blank" rel="noopener" style="font-family:var(--font-serif);text-decoration:none;display:inline-flex;align-items:center;gap:6px" title="Abrir la planilla de respaldo en Google Sheets">Planilla <span aria-hidden="true">&#8599;</span></a><button class="btn sm" id="btnExportPdf" style="font-family:var(--font-serif)">Exportar PDF</button><button class="btn sm" id="btnExportXlsx" style="font-family:var(--font-serif)">Exportar Excel</button><button class="btn sm" id="btnLogout" style="font-family:var(--font-serif)">Cambiar de usuario</button></div>
+        <div class="status-line" id="sesionNombre" style="margin-top:5px;font-family:var(--font-serif);font-size:18px;font-weight:600;color:var(--cream);line-height:1.2"></div>
+        <div class="status-line" id="sesionCorreo" style="margin-top:1px;font-size:11.5px;color:#B7C0CC"></div>
+        <div class="status-line" id="roleChip" style="margin-top:5px"></div>
+        <div class="status-line" style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="btnRefresh" style="font-family:var(--font-serif)">Refrescar</button><a class="btn sm" id="btnPlanilla" href="https://docs.google.com/spreadsheets/d/1R1zcNZg_FGTk_ek1F4oFwMEZ1ibrTBJ9CNKgLOCVUac/edit?gid=87067894#gid=87067894" target="_blank" rel="noopener" style="font-family:var(--font-serif);text-decoration:none;display:inline-flex;align-items:center;gap:6px" title="Abrir la planilla de respaldo en Google Sheets">Planilla <span aria-hidden="true">&#8599;</span></a><button class="btn sm" id="btnExportPdf" style="font-family:var(--font-serif)">Exportar PDF</button><button class="btn sm" id="btnExportXlsx" style="font-family:var(--font-serif)">Exportar Excel</button><button class="btn sm" id="btnLogout" style="font-family:var(--font-serif)">Cambiar de usuario</button></div>
       </div>
     </div>
 
@@ -802,7 +803,7 @@ function injectRbacCSS(){
   + "body.wl-readonly #holdBody input,body.wl-readonly #holdBody select,body.wl-readonly #holdBody textarea,body.wl-readonly #loanBody input,body.wl-readonly #loanBody select,body.wl-readonly #loanBody textarea,body.wl-readonly #dapBody input,body.wl-readonly #dapBody select,body.wl-readonly #dapBody textarea{pointer-events:none !important;background:transparent !important;border-color:transparent !important;box-shadow:none !important;-webkit-appearance:none;appearance:none;color:var(--ink);}"
   + ".wl-role-chip{display:inline-block;padding:2px 9px;font-family:var(--font-label);text-transform:uppercase;letter-spacing:.12em;font-size:10px;font-weight:600;border:1px solid var(--border-strong);}"
   + ".wl-role-chip.admin{background:#E7ECF2;color:var(--navy);border-color:var(--navy);}"
-  + ".wl-role-chip.viewer{background:#F4E7EA;color:var(--burgundy);border-color:var(--burgundy);}";
+  + ".wl-role-chip.viewer{background:rgba(255,255,255,.10);color:#C5CEDB;border-color:rgba(197,206,219,.55);}";
   document.head.appendChild(s);
 }
 
