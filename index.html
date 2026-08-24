@@ -105,20 +105,20 @@ a:hover{color:var(--accent);}
 /* ---------- Header ---------- */
 header.app{background:#132238;border-bottom:1px solid rgba(255,255,255,.14);}
 header.app .btn{background:transparent;border-color:var(--cream);color:var(--cream);}
-header.app .header-status .btn{padding:4px 9px;font-size:9.5px;letter-spacing:.1em;}
+header.app .header-status .btn{padding:3px 8px;font-size:8.5px;letter-spacing:.09em;}
 header.app .btn:hover{background:var(--cream);border-color:var(--cream);color:var(--navy);}
 .header-top{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:20px 0 14px;flex-wrap:wrap;}
 .brand .eyebrow{margin-bottom:6px;color:#D19AA4;}
 .brand h1{font-size:35px;color:var(--cream);}
 .brand p{margin:5px 0 0;color:#B7C0CC;font-size:13.5px;font-family:var(--font-serif);font-style:italic;}
-.header-status{text-align:right;font-size:12px;color:#B7C0CC;min-width:220px;}
+.header-status{text-align:right;font-size:10.5px;color:#B7C0CC;min-width:220px;}
 .header-status .status-line{margin:2px 0;}
-.status-badge{display:inline-block;padding:3px 10px;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;font-family:var(--font-label);border:1px solid var(--border-strong);}
+.status-badge{border-radius:3px;display:inline-block;padding:3px 10px;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;font-family:var(--font-label);border:1px solid var(--border-strong);}
 .status-badge.loading{background:#EDEFF3;color:var(--navy-soft);border-color:var(--navy-soft);}
 .status-badge.ok{background:#E7ECF2;color:var(--navy);border-color:var(--navy);}
 .status-badge.error{background:#F4E7EA;color:var(--burgundy);border-color:var(--burgundy);}
 
-.btn{border:1.5px solid var(--navy-soft);background:var(--navy-soft);color:var(--cream);padding:8px 16px;font-size:11.5px;font-weight:600;font-family:var(--font-label);text-transform:uppercase;letter-spacing:.12em;transition:background .14s,border-color .14s,color .14s;}
+.btn{border-radius:3px;border:1.5px solid var(--navy-soft);background:var(--navy-soft);color:var(--cream);padding:8px 16px;font-size:11.5px;font-weight:600;font-family:var(--font-label);text-transform:uppercase;letter-spacing:.12em;transition:background .14s,border-color .14s,color .14s;}
 .btn:hover{background:var(--accent-deep);border-color:var(--accent-deep);}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--border-strong);}
 .btn.ghost:hover{background:var(--navy-soft);border-color:var(--navy-soft);color:var(--cream);}
@@ -146,8 +146,8 @@ header.app .btn:hover{background:var(--cream);border-color:var(--cream);color:va
 /* ---------- Tabs ---------- */
 nav.tabs{background:#132238;border-bottom:1px solid rgba(255,255,255,.14);position:sticky;top:0;z-index:50;}
 .tabs-inner{display:flex;gap:6px;overflow-x:auto;padding:8px 0;}
-.tab-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);padding:9px 16px;font-family:var(--font-serif);letter-spacing:.02em;font-size:13px;font-weight:600;color:#D7DEE8;white-space:nowrap;transition:background .14s,color .14s,border-color .14s;}
-.tab-btn:hover{background:rgba(255,255,255,.16);color:var(--cream);border-color:rgba(255,255,255,.35);}
+.tab-btn{border-radius:3px 3px 0 0;background:#132238;border:1px solid rgba(255,255,255,.18);padding:9px 16px;font-family:var(--font-serif);letter-spacing:.02em;font-size:13px;font-weight:600;color:#D7DEE8;white-space:nowrap;transition:background .14s,color .14s,border-color .14s;}
+.tab-btn:hover{background:rgba(255,255,255,.10);color:var(--cream);border-color:rgba(255,255,255,.35);}
 .tab-btn.active{background:var(--cream);color:var(--navy);border-color:var(--cream);border-bottom:3px solid var(--burgundy);}
 .tab-btn.active:hover{background:var(--cream);color:var(--navy);}
 
@@ -408,8 +408,8 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
       <div class="header-status">
         <div class="status-line" id="statusFecha">Cartera CMF al: —</div>
         <div class="status-line" id="statusActualizado">Actualizado: —</div>
-        <div class="status-line" id="sesionNombre" style="margin-top:5px;font-family:var(--font-serif);font-size:18px;font-weight:600;color:var(--cream);line-height:1.2"></div>
-        <div class="status-line" id="sesionCorreo" style="margin-top:1px;font-size:11.5px;color:#B7C0CC"></div>
+        <div class="status-line" id="sesionNombre" style="margin-top:5px;font-family:var(--font-serif);font-size:14px;font-weight:600;color:var(--cream);line-height:1.2"></div>
+        <div class="status-line" id="sesionCorreo" style="margin-top:1px;font-size:10px;color:#B7C0CC"></div>
         <div class="status-line" id="roleChip" style="margin-top:5px"></div>
         <div class="status-line" style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="btnRefresh" style="font-family:var(--font-serif)">Refrescar</button><a class="btn sm" id="btnPlanilla" href="https://docs.google.com/spreadsheets/d/1R1zcNZg_FGTk_ek1F4oFwMEZ1ibrTBJ9CNKgLOCVUac/edit?gid=87067894#gid=87067894" target="_blank" rel="noopener" style="font-family:var(--font-serif);text-decoration:none;display:inline-flex;align-items:center;gap:6px" title="Abrir la planilla de respaldo en Google Sheets">Planilla <span aria-hidden="true">&#8599;</span></a><button class="btn sm" id="btnExportPdf" style="font-family:var(--font-serif)">Exportar PDF</button><button class="btn sm" id="btnExportXlsx" style="font-family:var(--font-serif)">Exportar Excel</button><button class="btn sm" id="btnLogout" style="font-family:var(--font-serif)">Cambiar de usuario</button></div>
       </div>
@@ -1784,7 +1784,7 @@ const PERSIST = {
     fields: ["agf","fondo","serie","mes","saldoIni","aportes","retiros","saldoFin","cuotaIni","cuotaFin","nCuotaI","nCuotaF","cuotaRet","aportesDet","retirosDet"],
     toRow: h => ({ agf:h.agf, fondo:h.fondo, serie:h.serie, mes:h.mes, saldoIni:h.saldoIni, aportes:h.aportes, retiros:h.retiros, saldoFin:h.saldoFin, cuotaIni:h.cuotaIni, cuotaFin:h.cuotaFin, nCuotaI:h.nCuotaI, nCuotaF:h.nCuotaF, cuotaRet:h.cuotaRet, aportesDet:(h.aportesDet&&h.aportesDet.length)?JSON.stringify(h.aportesDet):"", retirosDet:(h.retirosDet&&h.retirosDet.length)?JSON.stringify(h.retirosDet):"" }),
     fromRow: r => { let det=[],detR=[]; try{ if(r.aportesDet&&String(r.aportesDet).trim()) det=JSON.parse(r.aportesDet); }catch(e){} try{ if(r.retirosDet&&String(r.retirosDet).trim()) detR=JSON.parse(r.retirosDet); }catch(e){}
-      return { id:++STATE.holdSeq, agf:r.agf||"", fondo:r.fondo||"", serie:r.serie!=null?String(r.serie):"", mes:normMes(r.mes), saldoIni:toNum(r.saldoIni)||0, aportes:toNum(r.aportes)||0, retiros:toNum(r.retiros)||0, saldoFin:toNum(r.saldoFin)||0, cuotaIni:r.cuotaIni!=null?r.cuotaIni:"", cuotaFin:r.cuotaFin!=null?r.cuotaFin:"", nCuotaI:r.nCuotaI!=null?r.nCuotaI:"", nCuotaF:r.nCuotaF!=null?r.nCuotaF:"", cuotaRet:r.cuotaRet!=null?r.cuotaRet:"", aportesDet:Array.isArray(det)?det:[], retirosDet:Array.isArray(detR)?detR:[] }; },
+      return { id:++STATE.holdSeq, agf:r.agf||"", fondo:r.fondo||"", serie:r.serie!=null?String(r.serie):"", mes:normMes(r.mes), saldoIni:toNum(r.saldoIni)||0, aportes:toNum(r.aportes)||0, retiros:toNum(r.retiros)||0, saldoFin:(r.saldoFin==null||String(r.saldoFin).trim()==="")?"":(toNum(r.saldoFin)||0), cuotaIni:r.cuotaIni!=null?r.cuotaIni:"", cuotaFin:r.cuotaFin!=null?r.cuotaFin:"", nCuotaI:r.nCuotaI!=null?r.nCuotaI:"", nCuotaF:r.nCuotaF!=null?r.nCuotaF:"", cuotaRet:r.cuotaRet!=null?r.cuotaRet:"", aportesDet:Array.isArray(det)?det:[], retirosDet:Array.isArray(detR)?detR:[] }; },
     target: rows => { STATE.holdings = rows; },
     render: () => renderInversiones()
   },
@@ -1871,7 +1871,7 @@ async function cargarGuardados(){
    saldos reales (no de la Rent365d histórica). */
 function mesActualISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
 function normMes(v){ if(v==null||v==="")return ""; const s=String(v); let m=s.match(/^(\d{4})-(\d{2})/); if(m)return m[1]+"-"+m[2]; const d=new Date(s); if(!isNaN(d))return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); return ""; }
-function addMov(){ const id=++STATE.holdSeq; STATE.holdings.push({id:id,agf:"",fondo:"",serie:"",mes:mesActualISO(),saldoIni:0,aportes:0,retiros:0,saldoFin:0,cuotaIni:"",cuotaFin:"",cuotaRet:"",aportesDet:[],retirosDet:[]}); STATE.holdRowOpen[id]=true; renderInversiones(); }
+function addMov(){ const id=++STATE.holdSeq; STATE.holdings.push({id:id,agf:"",fondo:"",serie:"",mes:mesActualISO(),saldoIni:0,aportes:0,retiros:0,saldoFin:"",cuotaIni:"",cuotaFin:"",cuotaRet:"",aportesDet:[],retirosDet:[]}); STATE.holdRowOpen[id]=true; renderInversiones(); }
 function removeHolding(id){ STATE.holdings=STATE.holdings.filter(h=>h.id!==id); delete STATE.holdExpanded[id]; delete STATE.holdExpandedRe[id]; renderInversiones(); }
 function moveHolding(id,dir){ const i=STATE.holdings.findIndex(h=>h.id===id); if(i<0)return; const j=i+dir; if(j<0||j>=STATE.holdings.length)return; const a=STATE.holdings; [a[i],a[j]]=[a[j],a[i]]; renderInversiones(); }
 function clearHoldings(){ STATE.holdings=[]; renderInversiones(); }
@@ -2038,7 +2038,7 @@ function renderInversiones(){
     pr.querySelector(".h-fondo").addEventListener("change",e=>{ h.fondo=e.target.value; h.serie=""; renderInversiones(); });
     pr.querySelector(".h-serie").addEventListener("change",e=>{ h.serie=e.target.value; refreshCalc(id); });
     pr.querySelector(".h-mes").addEventListener("change",e=>{ h.mes=e.target.value; refreshCalc(id); });
-    const money=(sel,prop)=>{ const el=pr.querySelector(sel); if(el&&!el.disabled) el.addEventListener("input",ev=>{ h[prop]=parseMiles(ev.target.value); ev.target.value=h[prop]?nfInt.format(h[prop]):""; refreshCalc(id); }); };
+    const money=(sel,prop)=>{ const el=pr.querySelector(sel); if(el&&!el.disabled) el.addEventListener("input",ev=>{ h[prop]=String(ev.target.value).trim()===""?"":parseMiles(ev.target.value); ev.target.value=h[prop]?nfInt.format(h[prop]):""; refreshCalc(id); }); };
     money(".h-si","saldoIni"); money(".h-sf","saldoFin");
     const autoMonto=()=>{
       const vi=toNum(h.cuotaIni), ni=toNum(h.nCuotaI);
@@ -2987,7 +2987,48 @@ function drawMacroLine(pts, serie){
   g+=`<circle cx="${sx(last.d.getTime())}" cy="${sy(last.v)}" r="4" fill="#2E5A88"/>`;
   g+=`<line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t+ih}" stroke="#C9CDD3" stroke-width="1"/>`;
   g+=`<line x1="${pad.l}" y1="${pad.t+ih}" x2="${W-pad.r}" y2="${pad.t+ih}" stroke="#C9CDD3" stroke-width="1"/>`;
+  /* Capa de lectura: al hacer clic marca el día más cercano y muestra valor y fecha. */
+  g+=`<g id="macroPick"></g>`;
+  g+=`<rect x="${pad.l}" y="${pad.t}" width="${iw}" height="${ih}" fill="transparent" style="cursor:crosshair"/>`;
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.innerHTML=g;
+  bindMacroPick(svg, pts, serie, {W,H,pad,iw,ih,sx,sy});
+}
+
+/* Lectura puntual del gráfico macro: clic (o arrastre) sobre el área marca el día
+   más cercano y rotula el valor con su fecha. El estado vive en el SVG, así que
+   cada redibujo lo limpia solo. */
+function bindMacroPick(svg, pts, serie, geo){
+  const {W,H,pad,iw,ih,sx,sy}=geo;
+  const fmtV = serie==="EUR/USD" ? (v=>nf2.format(v)) : (v=>"$"+nfInt.format(Math.round(v)));
+  const fmtD = d=>String(d.getDate()).padStart(2,"0")+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+d.getFullYear();
+  const dias=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+  const draw=idx=>{
+    const gp=svg.querySelector("#macroPick"); if(!gp)return;
+    const p=pts[idx], x=sx(p.d.getTime()), y=sy(p.v);
+    const linea1=fmtV(p.v), linea2=dias[p.d.getDay()]+" "+fmtD(p.d);
+    const wBox=Math.max(linea1.length,linea2.length)*7.2+22, hBox=44;
+    let bx=x+14; if(bx+wBox>W-pad.r) bx=x-14-wBox;
+    let by=y-hBox-10; if(by<pad.t) by=y+12;
+    gp.innerHTML=
+      `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t+ih}" stroke="#2E5A88" stroke-width="1" stroke-dasharray="3 3"/>`+
+      `<circle cx="${x}" cy="${y}" r="5" fill="#FFFFFF" stroke="#1E2F4D" stroke-width="2"/>`+
+      `<rect x="${bx}" y="${by}" width="${wBox}" height="${hBox}" rx="3" fill="#1B2431" fill-opacity=".95"/>`+
+      `<text x="${bx+11}" y="${by+19}" fill="#FBF7EF" font-size="13" font-weight="600" font-family="Georgia,serif">${linea1}</text>`+
+      `<text x="${bx+11}" y="${by+34}" fill="#AEB9C8" font-size="10.5" font-family="'Libre Franklin',Arial,sans-serif">${linea2}</text>`;
+  };
+  const nearest=ev=>{
+    const r=svg.getBoundingClientRect(); if(!r.width)return null;
+    const xv=(ev.clientX-r.left)*(W/r.width);
+    let best=0, bd=Infinity;
+    pts.forEach((p,i)=>{ const d=Math.abs(sx(p.d.getTime())-xv); if(d<bd){bd=d;best=i;} });
+    return best;
+  };
+  let dragging=false;
+  svg.addEventListener("pointerdown",ev=>{ const i=nearest(ev); if(i!=null){ dragging=true; draw(i); } });
+  svg.addEventListener("pointermove",ev=>{ if(!dragging)return; const i=nearest(ev); if(i!=null) draw(i); });
+  const stop=()=>{ dragging=false; };
+  svg.addEventListener("pointerup",stop); svg.addEventListener("pointerleave",stop);
+  draw(pts.length-1); /* arranca en el último dato */
 }
 
 function renderMacroHistTable(){
