@@ -50,7 +50,7 @@
   --sage:#2E6B52;
 
   /* Semánticos — página gris fría con tarjetas blancas (sobrio, legible) */
-  --bg:#EEF1F6;
+  --bg:#132238;
   --surface:#FFFFFF;
   --surface-2:#EDF1F6;
   --ink:#1B2431;
@@ -103,7 +103,7 @@ a:hover{color:var(--accent);}
 @media(max-width:768px){.wrap{padding:0 16px;}}
 
 /* ---------- Header ---------- */
-header.app{background:var(--navy);border-bottom:1px solid var(--navy-deep);}
+header.app{background:#132238;border-bottom:1px solid rgba(255,255,255,.14);}
 header.app .btn{background:transparent;border-color:var(--cream);color:var(--cream);}
 header.app .header-status .btn{padding:4px 9px;font-size:9.5px;letter-spacing:.1em;}
 header.app .btn:hover{background:var(--cream);border-color:var(--cream);color:var(--navy);}
@@ -144,7 +144,7 @@ header.app .btn:hover{background:var(--cream);border-color:var(--cream);color:va
 .legal-banner .l2{color:#8D97A3;}
 
 /* ---------- Tabs ---------- */
-nav.tabs{background:var(--navy);border-bottom:1px solid var(--navy);position:sticky;top:0;z-index:50;}
+nav.tabs{background:#132238;border-bottom:1px solid rgba(255,255,255,.14);position:sticky;top:0;z-index:50;}
 .tabs-inner{display:flex;gap:6px;overflow-x:auto;padding:8px 0;}
 .tab-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);padding:9px 16px;font-family:var(--font-serif);letter-spacing:.02em;font-size:13px;font-weight:600;color:#D7DEE8;white-space:nowrap;transition:background .14s,color .14s,border-color .14s;}
 .tab-btn:hover{background:rgba(255,255,255,.16);color:var(--cream);border-color:rgba(255,255,255,.35);}
@@ -232,7 +232,7 @@ nav.tabs{background:var(--navy);border-bottom:1px solid var(--navy);position:sti
 @media(max-width:600px){.filters-body{grid-template-columns:1fr;}}
 .filters.collapsed .filters-body,.filters.collapsed .filter-actions{display:none;}
 .fg-label{display:block;font-family:var(--font-label);font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-muted);font-weight:600;margin-bottom:7px;}
-.check-list{max-height:140px;overflow-y:auto;border:1px solid var(--border);padding:7px 9px;background:var(--bg);}
+.check-list{max-height:140px;overflow-y:auto;border:1px solid var(--border);padding:7px 9px;background:var(--surface-2);}
 .check-item{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:2px 0;color:var(--ink);}
 .check-list .check-item{color:var(--ink);}
 .check-item input{margin:0;accent-color:var(--accent);}
@@ -359,7 +359,7 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
 /* ---------- Print ---------- */
 @media print{
   @page{size:A4;margin:16mm 14mm;}
-  body{background:#fff;color:#000;font-size:11pt;}
+  body{background:#fff !important;color:#000;font-size:11pt;}
   header.app,nav.tabs,.legal-banner,#errorBar,.print-bar,.no-print{display:none !important;}
   .tab-panel{display:none !important;}
   #tab-memo{display:block !important;padding:0 !important;}
@@ -378,7 +378,7 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
 
 <!-- Overlay de login (Google Identity Services). Se oculta tras una sesión válida;
      el bloqueo real de datos ocurre en el Apps Script, no acá (ver initLogin/arrancarApp). -->
-<div id="loginOverlay" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#1E2F4D;color:#FBF7EF;font-family:'Libre Franklin',sans-serif;text-align:center;padding:24px">
+<div id="loginOverlay" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#132238;color:#FBF7EF;font-family:'Libre Franklin',sans-serif;text-align:center;padding:24px">
   <div style="font-family:Georgia,serif;font-size:28px;letter-spacing:.06em;text-transform:uppercase">Wild Capital Hub</div>
   <div style="font-size:14px;color:#AEB9C8;max-width:320px">Acceso restringido a cuentas <strong>@wildlama.com</strong>.</div>
   <div id="gsiButton"></div>
@@ -1412,7 +1412,7 @@ function renderCartera(){
   Object.values(gk).forEach(arr=>{
     const inRange=arr.filter(h=>{ const mm=String(h.mes||""); return mm>=desdeMes && mm<=hastaMes; });
     const rec=inRange.sort((a,b)=>String(b.mes).localeCompare(String(a.mes)))[0]; if(!rec)return;
-    const c=recCalc(rec); const invertido=c.sf>0?c.sf:(c.si+c.ap-c.re);
+    const c=recCalc(rec); const invertido=c.sf; /* recCalc ya entrega el saldo de cierre (o el provisional si el mes esta en curso) */
     const ganFFMM=arr.filter(h=>{const mm=String(h.mes||"");return mm>=desdeMes && mm<=hoyMes;}).reduce((s,h)=>s+(recCalc(h).ganancia||0),0);
     if(invertido>0) items.push({tipo:"FFMM", label:rec.fondo||rec.agf||"Fondo", sub:rec.agf||"", capital:invertido, rentMes:c.rent, enCurso:c.enCurso, interesGanado:ganFFMM});
   });
@@ -1541,21 +1541,21 @@ function renderSaldoMatriz(){
     const mi=+mx[2]-1; if(mi<0||mi>=nMonths)return;
     const key=h.agf+"|"+h.fondo+"|"+h.serie;
     if(!g[key]) g[key]={agf:h.agf,fondo:h.fondo,serie:h.serie,label:h.fondo||h.agf||"Fondo",cel:{}};
-    const c=recCalc(h); g[key].cel[mi]=c.sf>0?c.sf:(c.si+c.ap-c.re);
+    const c=recCalc(h); g[key].cel[mi]=c.sf; /* saldo de cierre: 0 = fondo rescatado, nunca negativo */
   });
   const funds=Object.values(g);
   if(!funds.length){ el.innerHTML='<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0">Registra saldos por mes en <strong>Inversiones FFMM</strong> para ver aquí la foto contable de fin de mes.</p>'; return; }
-  const totMes=[]; for(let mi=0;mi<nMonths;mi++){ totMes[mi]=funds.reduce((a,f)=>a+(f.cel[mi]||0),0); }
+  const totMes=[], hayMes=[]; for(let mi=0;mi<nMonths;mi++){ totMes[mi]=funds.reduce((a,f)=>a+(f.cel[mi]||0),0); hayMes[mi]=funds.some(f=>f.cel[mi]!=null); }
   const th=`<th class="no-sort" style="text-align:left;position:sticky;left:0;background:var(--surface);z-index:1">Fondo</th>`+
     Array.from({length:nMonths},(_,mi)=>`<th class="no-sort right">${MM[mi]}</th>`).join("");
   const rows=funds.map(f=>{
-    const tds=Array.from({length:nMonths},(_,mi)=>{ const s=f.cel[mi];
-      return `<td class="right num" style="${s?'':'color:var(--ink-subtle)'}">${s?fmtCLP(s):DASH}</td>`;
+    const tds=Array.from({length:nMonths},(_,mi)=>{ const s=f.cel[mi], sinRegistro=(s==null);
+      return `<td class="right num" style="${(sinRegistro||!s)?'color:var(--ink-subtle)':''}">${sinRegistro?DASH:fmtCLP(s)}</td>`;
     }).join("");
     return `<tr><td style="position:sticky;left:0;background:var(--surface);z-index:1"><span class="trunc" style="font-weight:600;font-size:12px;display:inline-block;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="${escAttr(f.label)}">${escHtml(f.label)}</span><div style="font-size:10px;color:var(--ink-subtle);text-transform:uppercase;letter-spacing:.05em">${escHtml(f.agf||"")}${f.serie?" · "+escHtml(String(f.serie)):""}</div></td>${tds}</tr>`;
   }).join("");
   const totRow=`<tr style="border-top:2px solid var(--rule);font-weight:700"><td style="position:sticky;left:0;background:var(--surface-2);z-index:1">Total invertido</td>`+
-    Array.from({length:nMonths},(_,mi)=>`<td class="right num" style="background:var(--surface-2)">${totMes[mi]?fmtCLP(totMes[mi]):DASH}</td>`).join("")+`</tr>`;
+    Array.from({length:nMonths},(_,mi)=>`<td class="right num" style="background:var(--surface-2)">${hayMes[mi]?fmtCLP(totMes[mi]):DASH}</td>`).join("")+`</tr>`;
   el.innerHTML=`<div class="table-scroll" style="max-height:none;overflow-x:auto"><table class="data" style="min-width:${260+nMonths*100}px"><thead><tr>${th}</tr></thead><tbody>${rows}${totRow}</tbody></table></div><p style="font-size:11.5px;color:var(--ink-subtle);margin-top:10px;font-family:var(--font-serif);font-style:italic">Saldo invertido al cierre de cada mes (saldo final del registro; si el mes está en curso, el saldo provisional). Es la foto contable de la posición en cada fondo.</p>`;
 }
 
@@ -1915,9 +1915,20 @@ function cuadraturaHTML(h){
    modificado (ganancia ÷ capital medio ponderado por flujos). El encadenamiento
    geométrico de los meses se hace en agruparPorFondo (∏(1+r)−1). */
 function recCalc(h){ const apDet=aportesDetTotal(h), reDet=retirosDetTotal(h);
-  const si=+h.saldoIni||0, ap=(h.aportesDet&&h.aportesDet.length)?apDet:(+h.aportes||0), re=(h.retirosDet&&h.retirosDet.length)?reDet:(+h.retiros||0), sf=+h.saldoFin||0;
-  const enCurso = String(h.mes)===mesActualISO() && sf===0 && (si>0||ap>0);
-  if(enCurso) return {si,ap,re,sf:si+ap-re,ganancia:0,rent:null,rentMethod:null,enCurso:true};
+  const si=+h.saldoIni||0, ap=(h.aportesDet&&h.aportesDet.length)?apDet:(+h.aportes||0), re=(h.retirosDet&&h.retirosDet.length)?reDet:(+h.retiros||0);
+  /* Saldo final: hay que distinguir "no informado" (celda en blanco, mes por cerrar)
+     de un 0 explicito (el fondo se rescato por completo). Confundirlos hace que un
+     rescate total se lea como saldo negativo: el retiro incluye capital + utilidad,
+     asi que si+ap-re queda en -ganancia. */
+  const sfRaw=h.saldoFin;
+  const sfInformado = !(sfRaw==null || String(sfRaw).trim()==="") && !isNaN(toNum(sfRaw));
+  const capitalNeto = si+ap-re;
+  /* Sin saldo final informado: si el retiro se llevo mas que el capital, ese exceso
+     es utilidad realizada y la posicion quedo cerrada (saldo 0, nunca negativo). */
+  const cerradoPorRescate = !sfInformado && re>0 && capitalNeto<=0;
+  const enCurso = !sfInformado && !cerradoPorRescate && String(h.mes)===mesActualISO() && (si>0||ap>0);
+  if(enCurso) return {si,ap,re,sf:capitalNeto,ganancia:0,rent:null,rentMethod:null,enCurso:true};
+  const sf = sfInformado ? (toNum(sfRaw)||0) : Math.max(0,capitalNeto);
   const ganancia=sf-si-ap+re, denom=si+0.5*ap-0.5*re;
   const ci=toNum(h.cuotaIni), cf=toNum(h.cuotaFin);
   let rent=null, rentMethod=null;
