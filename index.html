@@ -576,7 +576,8 @@ table.data tbody tr:hover{background:rgba(124,46,60,.05);}
     <div class="section">
       <div class="section-head"><div><span class="eyebrow sec-eyebrow">Resultados</span><h2>Rentabilidad por fondo</h2><div class="sub">Saldo actual, ganancia del mes/año/total y rentabilidad acumulada, calculados con tus saldos reales.</div></div></div>
       <div class="section-body">
-        <div class="table-scroll" style="max-height:none"><table class="data" id="byFundTable"><thead id="byFundHead"></thead><tbody id="byFundBody"></tbody></table></div>
+        <div id="byFundMeses" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px"></div>
+        <div class="table-scroll" style="max-height:none"><table class="data" id="byFundTable"><thead id="byFundHead"></thead><tbody id="byFundBody"></tbody><tfoot id="byFundFoot"></tfoot></table></div>
       </div>
     </div>
 
@@ -805,7 +806,7 @@ function injectRbacCSS(){
   if(document.getElementById("wl-rbac-css")) return;
   const s=document.createElement("style"); s.id="wl-rbac-css";
   s.textContent = "#wlReadonlyBanner{display:none;}"
-  + "body.wl-readonly #wlReadonlyBanner{display:block;background:#F4E7EA;border-bottom:1px solid var(--burgundy);color:var(--burgundy);padding:9px 0;font-size:12.5px;font-family:var(--font-label);letter-spacing:.03em;}"
+  + "body.wl-readonly #wlReadonlyBanner{display:block;background:#132238;border-bottom:1px solid #132238;color:#FFFFFF;padding:9px 0;font-size:12.5px;font-family:var(--font-label);letter-spacing:.03em;}"
   + "body.wl-readonly #btnAddInv,body.wl-readonly #btnSaveInv,body.wl-readonly #btnAddLoan,body.wl-readonly #btnSaveLoan,body.wl-readonly #btnAddDap,body.wl-readonly #btnSaveDap{display:none !important;}"
   + "body.wl-readonly #holdBody .h-del,body.wl-readonly #holdBody .h-up,body.wl-readonly #holdBody .h-down,body.wl-readonly #holdBody .ad-del,body.wl-readonly #holdBody .rd-del,body.wl-readonly #holdBody .ad-add,body.wl-readonly #holdBody .rd-add,body.wl-readonly #loanBody .l-del,body.wl-readonly #dapBody .d-del{display:none !important;}"
   + "body.wl-readonly #holdBody input,body.wl-readonly #holdBody select,body.wl-readonly #holdBody textarea,body.wl-readonly #loanBody input,body.wl-readonly #loanBody select,body.wl-readonly #loanBody textarea,body.wl-readonly #dapBody input,body.wl-readonly #dapBody select,body.wl-readonly #dapBody textarea{pointer-events:none !important;background:transparent !important;border-color:transparent !important;box-shadow:none !important;-webkit-appearance:none;appearance:none;color:var(--ink);}"
@@ -1516,7 +1517,7 @@ function renderMensualMatriz(){
   const col=v=>v>=0?"#2E6B52":"#B03A3A";
   const totMes=[]; for(let mi=0;mi<nMonths;mi++){ totMes[mi]=funds.reduce((a,f)=>a+((f.cel[mi]&&!f.cel[mi].enCurso)?(f.cel[mi].gan||0):0),0); }
   const totFondo=f=>{ let s=0; for(let mi=0;mi<nMonths;mi++){ const c=f.cel[mi]; if(c&&!c.enCurso)s+=c.gan||0; } return s; };
-  const th=`<th class="no-sort" style="text-align:left;position:sticky;left:0;background:var(--surface);z-index:1">Fondo</th>`+
+  const th=`<th class="no-sort" style="text-align:left;position:sticky;left:0;z-index:1">Fondo</th>`+
     Array.from({length:nMonths},(_,mi)=>`<th class="no-sort right">${MM[mi]}</th>`).join("")+
     `<th class="no-sort right" style="border-left:2px solid var(--rule)">Año</th>`;
   const rows=funds.map(f=>{
@@ -1554,7 +1555,7 @@ function renderSaldoMatriz(){
   const funds=Object.values(g);
   if(!funds.length){ el.innerHTML='<p style="font-family:var(--font-serif);font-style:italic;color:var(--ink-muted);margin:0">Registra saldos por mes en <strong>Inversiones FFMM</strong> para ver aquí la foto contable de fin de mes.</p>'; return; }
   const totMes=[], hayMes=[]; for(let mi=0;mi<nMonths;mi++){ totMes[mi]=funds.reduce((a,f)=>a+(f.cel[mi]||0),0); hayMes[mi]=funds.some(f=>f.cel[mi]!=null); }
-  const th=`<th class="no-sort" style="text-align:left;position:sticky;left:0;background:var(--surface);z-index:1">Fondo</th>`+
+  const th=`<th class="no-sort" style="text-align:left;position:sticky;left:0;z-index:1">Fondo</th>`+
     Array.from({length:nMonths},(_,mi)=>`<th class="no-sort right">${MM[mi]}</th>`).join("");
   const rows=funds.map(f=>{
     const tds=Array.from({length:nMonths},(_,mi)=>{ const s=f.cel[mi], sinRegistro=(s==null);
@@ -2100,9 +2101,10 @@ function refreshCalc(id,totales){
    El interés devenga linealmente desde la fecha de cada movimiento hasta hoy. */
 /* Agrupa los registros por fondo (agf|fondo|serie), encadena los meses y
    calcula saldo actual, ganancia (mes/año/total) y rentabilidad acumulada. */
-function agruparPorFondo(){
+function agruparPorFondo(mesSel){
   const g={};
   STATE.holdings.forEach(h=>{ if(!(h.fondo||h.agf))return;
+    if(mesSel && String(h.mes||"").slice(0,7)!==mesSel) return;   /* vista de un mes puntual */
     const key=h.agf+"|"+h.fondo+"|"+h.serie;
     if(!g[key]) g[key]={agf:h.agf,fondo:h.fondo,serie:h.serie,f:matchFondo(h),meses:[]};
     g[key].meses.push(h);
@@ -2110,8 +2112,9 @@ function agruparPorFondo(){
   const curMes=mesActualISO(), curYear=String(new Date().getFullYear());
   return Object.values(g).map(x=>{
     x.meses.sort((a,b)=>String(a.mes||"").localeCompare(String(b.mes||"")));
-    let gTotal=0,gAno=0,gMes=0,ap=0,re=0,acum=1,acumYear=1,tieneRent=false,nPer=0;
+    let gTotal=0,gAno=0,gMes=0,ap=0,re=0,acum=1,acumYear=1,tieneRent=false,nPer=0,si0=null;
     x.meses.forEach(h=>{ const c=recCalc(h); gTotal+=c.ganancia; ap+=c.ap; re+=c.re;
+      if(si0===null) si0=c.si;   /* saldo inicial del primer mes del rango mostrado */
       if(String(h.mes)===curMes) gMes+=c.ganancia;
       if(String(h.mes||"").slice(0,4)===curYear){ gAno+=c.ganancia; if(c.rent!=null) acumYear*=(1+c.rent); }
       if(c.rent!=null){ acum*=(1+c.rent); tieneRent=true; nPer++; }
@@ -2121,7 +2124,7 @@ function agruparPorFondo(){
        para que la posición no desaparezca del dashboard ni del gráfico. */
     let saldoActual=0;
     for(let k=x.meses.length-1;k>=0;k--){ const c=recCalc(x.meses[k]); if(c.sf>0){ saldoActual=c.sf; break; } }
-    x.saldoActual=saldoActual;
+    x.saldoActual=saldoActual; x.saldoIni=si0||0;
     x.aportes=ap; x.retiros=re; x.gananciaTotal=gTotal; x.gananciaAno=gAno; x.gananciaMes=gMes;
     x.rentAcum=tieneRent?acum-1:null; x.rentAno=acumYear-1;
     /* Anualización GIPS: acumulada si <12 meses; (1+acum)^(12/n)−1 si ≥12. */
@@ -2134,26 +2137,81 @@ function agruparPorFondo(){
   });
 }
 
-const BYFUND_COLS=["Fondo","AGF","Serie","Saldo actual","Aportes","Retiros","Ganancia año","Ganancia mes","Ganancia total","Rentab. acum. (TWR)","Rentab. anualizada"];
+const BYFUND_COLS=["Fondo","AGF","Serie","Saldo inicial","Saldo actual","Aportes","Retiros","Ganancia año","Ganancia mes","Ganancia total","Rentab. acum. (TWR)","Rentab. anualizada"];
+const BYFUND_COLS_MES=["Fondo","AGF","Serie","Saldo inicial","Saldo final","Aportes","Retiros","Ganancia del mes","Rentab. del mes"];
+var BYFUND_MES=null;   /* null = todo el historial; "YYYY-MM" = un mes puntual */
+
+function mesLabelISO(m){ const MM=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const x=String(m||"").match(/^(\d{4})-(\d{2})/); return x?MM[+x[2]-1]+" "+x[1]:String(m||"—"); }
+
+/* Meses con registros, del más nuevo al más viejo. */
+function mesesConRegistros(){
+  const s={}; STATE.holdings.forEach(h=>{ const m=String(h.mes||""); if(/^\d{4}-\d{2}/.test(m)) s[m.slice(0,7)]=1; });
+  return Object.keys(s).sort().reverse();
+}
+
+/* Botonera de periodo: cada mes es clickeable para ver sus totales en vez del acumulado. */
+function renderByFundMeses(){
+  const box=document.getElementById("byFundMeses"); if(!box)return;
+  const meses=mesesConRegistros();
+  if(BYFUND_MES && meses.indexOf(BYFUND_MES)===-1) BYFUND_MES=null;
+  const chip=(label,val,activo)=>`<button class="btn sm" data-mes="${val||""}" style="font-family:var(--font-serif);${activo?"background:var(--navy);border-color:var(--navy);color:var(--cream)":"background:transparent;border-color:var(--border);color:var(--ink)"}">${label}</button>`;
+  box.innerHTML=`<span class="eyebrow" style="margin-right:4px">Periodo</span>`
+    + chip("Todo el historial",null,!BYFUND_MES)
+    + meses.map(m=>chip(mesLabelISO(m),m,BYFUND_MES===m)).join("");
+  box.querySelectorAll("button[data-mes]").forEach(b=>b.addEventListener("click",()=>{
+    BYFUND_MES=b.getAttribute("data-mes")||null; renderByFund();
+  }));
+}
+
 function renderByFund(){
-  const head=document.getElementById("byFundHead"), body=document.getElementById("byFundBody"); if(!head)return;
-  head.innerHTML="<tr>"+BYFUND_COLS.map((h,i)=>`<th class="${i>=3?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
-  const groups=agruparPorFondo();
-  if(!groups.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${BYFUND_COLS.length}">Sin registros con fondo válido.</td></tr>`; return; }
+  const head=document.getElementById("byFundHead"), body=document.getElementById("byFundBody"), foot=document.getElementById("byFundFoot");
+  if(!head)return;
+  renderByFundMeses();
+  const mes=BYFUND_MES, cols=mes?BYFUND_COLS_MES:BYFUND_COLS;
+  head.innerHTML="<tr>"+cols.map((h,i)=>`<th class="${i>=3?'right':''} no-sort">${h}</th>`).join("")+"</tr>";
+  const groups=agruparPorFondo(mes);
+  if(foot) foot.innerHTML="";
+  if(!groups.length){ body.innerHTML=`<tr><td class="empty-state" colspan="${cols.length}">${mes?"Sin registros en "+mesLabelISO(mes)+".":"Sin registros con fondo válido."}</td></tr>`; return; }
   groups.sort((a,b)=>b.saldoActual-a.saldoActual);
   const col=v=>v>=0?"#2E6B52":"#B03A3A";
+  const money=v=>v?fmtCLP(v):DASH;
   body.innerHTML=groups.map(g=>`<tr>
     <td class="trunc" title="${escAttr(g.fondo)}">${escHtml(g.fondo)}</td>
     <td>${escHtml(g.agf)}</td><td>${escHtml(String(g.serie))}</td>
+    <td class="right num">${money(g.saldoIni)}</td>
     <td class="right num" style="font-weight:600">${fmtCLP(g.saldoActual)}</td>
-    <td class="right num">${g.aportes?fmtCLP(g.aportes):DASH}</td>
-    <td class="right num">${g.retiros?fmtCLP(g.retiros):DASH}</td>
-    <td class="right num"><span style="color:${col(g.gananciaAno)}">${g.gananciaAno?fmtCLP(g.gananciaAno):DASH}</span></td>
-    <td class="right num"><span style="color:${col(g.gananciaMes)}">${g.gananciaMes?fmtCLP(g.gananciaMes):DASH}</span></td>
-    <td class="right num" style="font-weight:600"><span style="color:${col(g.gananciaTotal)}">${g.gananciaTotal?fmtCLP(g.gananciaTotal):DASH}</span></td>
+    <td class="right num">${money(g.aportes)}</td>
+    <td class="right num">${money(g.retiros)}</td>`
+    + (mes
+      ? `<td class="right num" style="font-weight:600"><span style="color:${col(g.gananciaTotal)}">${money(g.gananciaTotal)}</span></td>
+    <td class="right num">${g.rentAcum===null?DASH:nf2.format(g.rentAcum*100)+"%"}</td>`
+      : `<td class="right num"><span style="color:${col(g.gananciaAno)}">${money(g.gananciaAno)}</span></td>
+    <td class="right num"><span style="color:${col(g.gananciaMes)}">${money(g.gananciaMes)}</span></td>
+    <td class="right num" style="font-weight:600"><span style="color:${col(g.gananciaTotal)}">${money(g.gananciaTotal)}</span></td>
     <td class="right num">${g.rentAcum===null?DASH:nf2.format(g.rentAcum*100)+"%"}</td>
-    <td class="right num" title="${g.nPeriodos>=12?'Anualizada (GIPS)':'Acumulada — aún &lt;12 meses'}">${g.rentAnual===null?DASH:nf2.format(g.rentAnual*100)+"%"+(g.nPeriodos>=12?"":" *")}</td>
-  </tr>`).join("");
+    <td class="right num" title="${g.nPeriodos>=12?'Anualizada (GIPS)':'Acumulada — aún &lt;12 meses'}">${g.rentAnual===null?DASH:nf2.format(g.rentAnual*100)+"%"+(g.nPeriodos>=12?"":" *")}</td>`)
+    + `</tr>`).join("");
+
+  /* Totales del periodo mostrado: saldos iniciales, aportes, retiros y ganancias. */
+  if(foot){
+    const sum=k=>groups.reduce((a,g)=>a+(g[k]||0),0);
+    const tSi=sum("saldoIni"), tSf=sum("saldoActual"), tAp=sum("aportes"), tRe=sum("retiros");
+    const tGan=sum("gananciaTotal"), tAno=sum("gananciaAno"), tMes=sum("gananciaMes");
+    /* Rentabilidad del conjunto: Dietz modificado sobre los flujos del periodo. */
+    const denom=tSi+0.5*tAp-0.5*tRe, rentTot=denom>0?tGan/denom:null;
+    const bg="background:var(--surface-2)";
+    const cell=(v,bold)=>`<td class="right num" style="${bg}${bold?";font-weight:600":""}">${money(v)}</td>`;
+    const cellG=(v,bold)=>`<td class="right num" style="${bg}${bold?";font-weight:600":""}"><span style="color:${col(v)}">${money(v)}</span></td>`;
+    const pct=v=>`<td class="right num" style="${bg}">${v===null?DASH:nf2.format(v*100)+"%"}</td>`;
+    foot.innerHTML=`<tr style="border-top:2px solid var(--navy)">
+      <td colspan="3" style="${bg};font-weight:600;font-family:var(--font-serif)">Total ${mes?mesLabelISO(mes):"historial"} · ${groups.length} fondo${groups.length===1?"":"s"}</td>
+      ${cell(tSi)}${cell(tSf,true)}${cell(tAp)}${cell(tRe)}`
+      + (mes
+        ? `${cellG(tGan,true)}${pct(rentTot)}`
+        : `${cellG(tAno)}${cellG(tMes)}${cellG(tGan,true)}${pct(rentTot)}<td class="right num" style="${bg}">${DASH}</td>`)
+      + `</tr>`;
+  }
 }
 
 function renderHoldSummary(){
