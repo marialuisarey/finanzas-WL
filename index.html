@@ -1839,19 +1839,48 @@ async function guardarEnSheet(tipo){
       headers:{ "Content-Type":"text/plain;charset=utf-8" }, body:JSON.stringify(payload) });
   }catch(err){ console.error(err); setPersistMsg(tipo,"Error de conexión al guardar."); return false; }
   /* Confirmar releyendo la hoja. El POST no-cors responde antes de que el
-     servidor termine de escribir, así que reintentamos la lectura varias veces. */
-  const target = filas.length;
-  for(let intento=1; intento<=4; intento++){
+     servidor termine de escribir, así que reintentamos la lectura varias veces.
+     Se compara el CONTENIDO (huella numérica), no solo la cantidad de filas: con
+     el conteo bastaba que la hoja tuviera el mismo número de registros para dar
+     por guardado algo que en realidad no se escribió, y al revés declaraba error
+     cuando sí se había escrito. */
+  const target = filas.length, huellaEnviada = huellaFilas(filas);
+  let ultN = null, ultHuella = null;
+  /* 6 intentos y timeout amplio: la relectura suele ser lo lento (la hoja queda
+     ocupada justo después de escribir), y un timeout corto hacía parecer que el
+     guardado había fallado cuando en realidad sí se escribió. */
+  for(let intento=1; intento<=6; intento++){
     try{
       await new Promise(r=>setTimeout(r, 800*intento));
-      const j = await fetchJson(conToken(BASE_URL + "?hoja=" + encodeURIComponent(P.hoja) + "&_t=" + Date.now()), 15000);
-      const n = (j && j.hoja!=="Fondos" && Array.isArray(j.datos)) ? j.datos.filter(r=>Object.values(r).some(v=>v!=null&&v!=="")).length : 0;
-      if(n>=target && target>0){ setPersistMsg(tipo,"Guardado ✓ "+n+" registro"+(n===1?"":"s")+" en la planilla · "+nowHM()); return true; }
-      if(target===0){ setPersistMsg(tipo,"Guardado ✓ (planilla vacía) · "+nowHM()); return true; }
+      setPersistMsg(tipo,"Guardando… confirmando en la planilla ("+intento+"/6)");
+      const j = await fetchJson(conToken(BASE_URL + "?hoja=" + encodeURIComponent(P.hoja) + "&_t=" + Date.now()), 30000);
+      const datos = (j && j.hoja!=="Fondos" && Array.isArray(j.datos)) ? j.datos.filter(r=>Object.values(r).some(v=>v!=null&&v!=="")) : [];
+      ultN = datos.length; ultHuella = huellaFilas(datos.map(r=>P.toRow(P.fromRow(r))));
+      if(target===0 && ultN===0){ setPersistMsg(tipo,"Guardado ✓ (planilla vacía) · "+nowHM()); return true; }
+      if(target>0 && ultHuella===huellaEnviada){ setPersistMsg(tipo,"Guardado ✓ "+ultN+" registro"+(ultN===1?"":"s")+" en la planilla · "+nowHM()); return true; }
     }catch(e){ /* seguir reintentando */ }
   }
-  setPersistMsg(tipo,"Enviado, pero la planilla aún no refleja los cambios. Reintenta en unos segundos; si persiste, revisa que el Apps Script esté desplegado como \"Versión nueva\" con acceso \"Cualquiera\".");
+  /* Diagnóstico según lo que devolvió la relectura: el POST va en modo no-cors,
+     así que el error del Apps Script no es legible y hay que inferirlo. */
+  let causa;
+  if(ultN===null) causa="El POST se envió pero no se pudo releer la hoja para confirmar (la lectura no respondió en 30s). Puede estar guardado: abre la planilla o presiona \"Cargar guardados\" para verificar.";
+  else if(ultN===0) causa="La hoja \""+P.hoja+"\" quedó vacía: el POST no escribió. Lo más probable es que el Apps Script desplegado sea una versión antigua, o que tu correo no esté en ADMINS_EDICION.";
+  else if(ultN!==target) causa="La hoja tiene "+ultN+" registro"+(ultN===1?"":"s")+" y se enviaron "+target+": la escritura no se completó.";
+  else causa="La hoja tiene los "+target+" registros pero con valores distintos a los enviados: el Apps Script desplegado no corresponde a la versión actual.";
+  setPersistMsg(tipo,"No se guardó. "+causa+" Vuelve a desplegar el Apps Script como \"Versión nueva\" con acceso \"Cualquiera\" y reintenta.");
   return false;
+}
+
+/* Huella de un set de filas: cantidad + suma de todos sus valores numéricos.
+   Sirve para confirmar que lo que quedó en la planilla es lo que se envió. */
+function huellaFilas(filas){
+  let s=0;
+  (filas||[]).forEach(r=>Object.keys(r||{}).sort().forEach(k=>{
+    const v=r[k];
+    if(typeof v==="number"){ s+=v; return; }
+    const n=toNum(v); if(!isNaN(n)&&String(v).trim()!=="") s+=n;
+  }));
+  return (filas||[]).length+":"+Math.round(s);
 }
 
 /* Carga un tipo desde su hoja. Silencioso si la hoja no existe aún. */
@@ -1864,7 +1893,49 @@ async function cargarDeSheet(tipo, silencioso){
     const rows = j.datos.filter(r=>Object.values(r).some(v=>v!=null&&v!=="")).map(P.fromRow);
     P.target(rows); P.render();
     if(!silencioso) setPersistMsg(tipo, rows.length?("Cargados "+rows.length+" registro"+(rows.length===1?"":"s")+" · "+nowHM()):"No hay datos guardados aún.");
+    avisarBorrador(tipo);
   }catch(err){ if(!silencioso) setPersistMsg(tipo,"No se pudo cargar (¿hoja no creada aún?)."); }
+}
+
+/* ---------- Borrador local ----------
+   Todo lo que se edita en pantalla se respalda en el navegador. Si la escritura en
+   la planilla falla (o la pestaña se recarga antes de guardar), los registros no se
+   pierden: al cargar se compara lo que trajo la hoja con el borrador y, si el
+   borrador tiene algo que la hoja no refleja, se ofrece restaurarlo. */
+var LS_BORRADOR="wch.borrador.v1";
+function leerBorrador(){ try{ return JSON.parse(localStorage.getItem(LS_BORRADOR)||"null"); }catch(e){ return null; } }
+/* Se lee UNA vez al arrancar, antes de cualquier render: es la copia con la que se
+   compara después lo que trajo la planilla. Releerlo más tarde no sirve, porque a
+   esa altura ya fue sobreescrito por el estado actual. */
+var BORRADOR_INICIAL=leerBorrador();
+function totalRegs(o){ return ((o&&o.inversiones)||[]).length+((o&&o.dap)||[]).length+((o&&o.prestamos)||[]).length; }
+/* Solo se escribe desde puntos de mutación real, y nunca degradando el respaldo:
+   un estado vacío (o más chico que el respaldo, antes de terminar de cargar) no lo pisa. */
+function guardarBorrador(){
+  try{
+    const cur={ts:Date.now(), inversiones:STATE.holdings||[], dap:STATE.daps||[], prestamos:STATE.loans||[]};
+    const n=totalRegs(cur); if(!n) return;
+    if(!STATE.loaded && totalRegs(leerBorrador())>n) return;
+    localStorage.setItem(LS_BORRADOR, JSON.stringify(cur));
+  }catch(e){}
+}
+
+/* Tras cargar de la planilla: si el borrador local no coincide, avisar y permitir
+   restaurarlo. No sobreescribe nada por su cuenta. */
+function avisarBorrador(tipo){
+  const P=PERSIST[tipo], b=BORRADOR_INICIAL; if(!P||!b) return;
+  const local=b[tipo]||[], enPantalla=(tipo==="inversiones"?STATE.holdings:tipo==="dap"?STATE.daps:STATE.loans)||[];
+  if(!local.length) return;
+  if(huellaFilas(local.map(P.toRow))===huellaFilas(enPantalla.map(P.toRow))) return;
+  const el=document.getElementById("persist-"+tipo); if(!el) return;
+  const f=new Date(b.ts), p=n=>String(n).padStart(2,"0");
+  el.innerHTML="⚠ Hay un respaldo local con "+local.length+" registro"+(local.length===1?"":"s")+
+    " (guardado "+p(f.getDate())+"-"+p(f.getMonth()+1)+" "+p(f.getHours())+":"+p(f.getMinutes())+
+    ") que no coincide con la planilla ("+enPantalla.length+"). "+
+    '<button class="btn ghost sm" id="restaurar-'+tipo+'" type="button" style="margin-left:6px">Restaurar respaldo</button>';
+  const btn=document.getElementById("restaurar-"+tipo);
+  if(btn) btn.addEventListener("click",()=>{ P.target(local.slice()); P.render();
+    setPersistMsg(tipo,"Respaldo restaurado ("+local.length+" registros). Revísalo y presiona \"Guardar en planilla\"."); });
 }
 
 function setPersistMsg(tipo,msg){ const el=document.getElementById("persist-"+tipo); if(el) el.textContent=msg; }
@@ -1880,13 +1951,33 @@ async function cargarGuardados(){
    saldos reales (no de la Rent365d histórica). */
 function mesActualISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
 function normMes(v){ if(v==null||v==="")return ""; const s=String(v); let m=s.match(/^(\d{4})-(\d{2})/); if(m)return m[1]+"-"+m[2]; const d=new Date(s); if(!isNaN(d))return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); return ""; }
-function addMov(){ const id=++STATE.holdSeq; STATE.holdings.push({id:id,agf:"",fondo:"",serie:"",mes:mesActualISO(),saldoIni:0,aportes:0,retiros:0,saldoFin:"",cuotaIni:"",cuotaFin:"",cuotaRet:"",aportesDet:[],retirosDet:[]}); STATE.holdRowOpen[id]=true; renderInversiones(); }
-function removeHolding(id){ STATE.holdings=STATE.holdings.filter(h=>h.id!==id); delete STATE.holdExpanded[id]; delete STATE.holdExpandedRe[id]; renderInversiones(); }
-function moveHolding(id,dir){ const i=STATE.holdings.findIndex(h=>h.id===id); if(i<0)return; const j=i+dir; if(j<0||j>=STATE.holdings.length)return; const a=STATE.holdings; [a[i],a[j]]=[a[j],a[i]]; renderInversiones(); }
-function clearHoldings(){ STATE.holdings=[]; renderInversiones(); }
+function addMov(){ const id=++STATE.holdSeq; STATE.holdings.push({id:id,agf:"",fondo:"",serie:"",mes:mesActualISO(),saldoIni:0,aportes:0,retiros:0,saldoFin:"",cuotaIni:"",cuotaFin:"",cuotaRet:"",aportesDet:[],retirosDet:[]}); STATE.holdRowOpen[id]=true; renderInversiones(); guardarBorrador(); }
+function removeHolding(id){ STATE.holdings=STATE.holdings.filter(h=>h.id!==id); delete STATE.holdExpanded[id]; delete STATE.holdExpandedRe[id]; renderInversiones(); guardarBorrador(); }
+function moveHolding(id,dir){ const i=STATE.holdings.findIndex(h=>h.id===id); if(i<0)return; const j=i+dir; if(j<0||j>=STATE.holdings.length)return; const a=STATE.holdings; [a[i],a[j]]=[a[j],a[i]]; renderInversiones(); guardarBorrador(); }
+function clearHoldings(){ STATE.holdings=[]; renderInversiones(); }   /* no toca el respaldo: vaciar la vista no borra el respaldo */
 /* Suma de los aportes / retiros detallados (si existen). */
 function aportesDetTotal(h){ return (h.aportesDet||[]).reduce((a,x)=>a+(toNum(x.monto)||0),0); }
 function retirosDetTotal(h){ return (h.retirosDet||[]).reduce((a,x)=>a+(toNum(x.monto)||0),0); }
+
+/* Aportes y retiros efectivos del mes: el detalle manda cuando tiene lineas; si no,
+   se usa el total heredado de la planilla (columnas aportes/retiros).
+   UNA sola funcion decide esto para que el calculo y el formulario nunca muestren
+   cifras distintas: antes el input mostraba la suma del detalle mientras recCalc
+   usaba el total heredado, asi que un retiro viejo de la planilla quedaba invisible
+   pero seguia inflando la ganancia. */
+function movTotales(h){
+  const apDet=aportesDetTotal(h), reDet=retirosDetTotal(h);
+  const apHayDet=!!(h.aportesDet&&h.aportesDet.length), reHayDet=!!(h.retirosDet&&h.retirosDet.length);
+  const apTot=toNum(h.aportes)||0, reTot=toNum(h.retiros)||0;
+  return {
+    ap: apHayDet?apDet:apTot, re: reHayDet?reDet:reTot,
+    apDeDetalle: apHayDet, reDeDetalle: reHayDet,
+    apDet, reDet, apTot, reTot,
+    /* El total heredado contradice al detalle: dato a revisar en la planilla. */
+    apConflicto: apHayDet && apTot>0 && Math.abs(apTot-apDet)>1,
+    reConflicto: reHayDet && reTot>0 && Math.abs(reTot-reDet)>1
+  };
+}
 function autoMovMonto(a,dr,isAp,id){
   const vc=toNum(a.cuota), n=toNum(a.nCuotas);
   if(vc>0&&n>0){ a.monto=Math.round(vc*n);
@@ -1913,6 +2004,10 @@ function cuadraturaHTML(h){
     <span style="text-transform:uppercase;letter-spacing:.08em;font-size:9.5px;color:var(--ink-muted);font-family:var(--font-label);align-self:center">Cuadratura</span>
     ${chk("Monto invertido inicio",h.nCuotaI,h.cuotaIni,h.saldoIni)}
     ${chk("Monto invertido fin",h.nCuotaF,h.cuotaFin,h.saldoFin)}
+    ${(()=>{ const mv=movTotales(h); const avisos=[];
+      if(mv.apConflicto) avisos.push("aportes de la planilla "+fmtCLP(mv.apTot)+" vs detalle "+fmtCLP(mv.apDet));
+      if(mv.reConflicto) avisos.push("retiros de la planilla "+fmtCLP(mv.reTot)+" vs detalle "+fmtCLP(mv.reDet));
+      return avisos.length?`<span style="color:#B03A3A"><strong>⚠ Revisar:</strong> ${avisos.join(" · ")} (manda el detalle)</span>`:""; })()}
   </div>`;
 }
 
@@ -1923,8 +2018,8 @@ function cuadraturaHTML(h){
    rentabilidad temporalmente ponderada. Sin valor cuota, se aproxima con Dietz
    modificado (ganancia ÷ capital medio ponderado por flujos). El encadenamiento
    geométrico de los meses se hace en agruparPorFondo (∏(1+r)−1). */
-function recCalc(h){ const apDet=aportesDetTotal(h), reDet=retirosDetTotal(h);
-  const si=+h.saldoIni||0, ap=(h.aportesDet&&h.aportesDet.length)?apDet:(+h.aportes||0), re=(h.retirosDet&&h.retirosDet.length)?reDet:(+h.retiros||0);
+function recCalc(h){ const mv=movTotales(h);
+  const si=toNum(h.saldoIni)||0, ap=mv.ap, re=mv.re;
   /* Saldo final: hay que distinguir "no informado" (celda en blanco, mes por cerrar)
      de un 0 explicito (el fondo se rescato por completo). Confundirlos hace que un
      rescate total se lea como saldo negativo: el retiro incluye capital + utilidad,
@@ -2000,6 +2095,7 @@ function renderInversiones(){
     const fondoOpts=h.agf?(`<option value="">— Fondo —</option>`+fondosDeAgf(h.agf).map(x=>opt(x,h.fondo)).join("")):`<option value="">Elige banco primero</option>`;
     const serieOpts=(h.agf&&h.fondo)?(`<option value="">— Serie —</option>`+seriesDeFondo(h.agf,h.fondo).map(x=>opt(x,h.serie)).join("")):`<option value="">Elige fondo primero</option>`;
     const fld=(lbl,inner)=>`<div style="display:flex;flex-direction:column;gap:4px"><label style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.09em;font-size:9.5px;color:var(--ink-muted);font-weight:600">${lbl}</label>${inner}</div>`;
+    const mv=movTotales(h);
     const apRows=(h.aportesDet||[]).map((a,idx)=>`<tr data-di="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${idx+1}</td><td><input type="date" class="ad-fecha" style="width:148px" value="${a.fecha||""}"></td><td style="text-align:right"><input type="text" inputmode="numeric" class="ad-monto num" style="width:128px;text-align:right" placeholder="$0" value="${a.monto?nfInt.format(a.monto):""}"></td><td style="text-align:right"><input type="text" class="ad-cuota num" style="width:108px;text-align:right" placeholder="valor cuota" value="${a.cuota!=null?String(a.cuota):""}"></td><td style="text-align:right"><input type="text" class="ad-nc num" style="width:100px;text-align:right" placeholder="N° cuotas" value="${a.nCuotas!=null?String(a.nCuotas):""}"></td><td><button class="btn ghost sm ad-del" type="button" style="padding:2px 8px;font-size:9.5px">Quitar</button></td></tr>`).join("");
     const reRows=(h.retirosDet||[]).map((a,idx)=>`<tr data-di="${idx}"><td style="text-align:right;color:var(--ink-subtle)">${idx+1}</td><td><input type="date" class="rd-fecha" style="width:148px" value="${a.fecha||""}"></td><td style="text-align:right"><input type="text" inputmode="numeric" class="rd-monto num" style="width:128px;text-align:right" placeholder="$0" value="${a.monto?nfInt.format(a.monto):""}"></td><td style="text-align:right"><input type="text" class="rd-cuota num" style="width:108px;text-align:right" placeholder="valor cuota" value="${a.cuota!=null?String(a.cuota):""}"></td><td style="text-align:right"><input type="text" class="rd-nc num" style="width:100px;text-align:right" placeholder="N° cuotas" value="${a.nCuotas!=null?String(a.nCuotas):""}"></td><td><button class="btn ghost sm rd-del" type="button" style="padding:2px 8px;font-size:9.5px">Quitar</button></td></tr>`).join("");
     const subTbl=(titulo,cls,rows,total,addcls)=>`<div style="margin-top:12px"><div style="font-family:var(--font-label);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--ink-muted);margin-bottom:6px">${titulo}</div><table class="data" style="width:auto;min-width:520px"><thead><tr><th class="right no-sort">#</th><th class="no-sort">Fecha</th><th class="right no-sort">Monto</th><th class="right no-sort">Valor cuota del día</th><th class="right no-sort">N° cuotas</th><th class="no-sort"></th></tr></thead><tbody>${rows||`<tr><td colspan="6" style="color:var(--ink-subtle);font-style:italic;font-family:var(--font-serif)">Sin registros aún.</td></tr>`}</tbody><tfoot><tr style="font-weight:600;border-top:2px solid var(--rule)"><td></td><td>Total</td><td style="text-align:right">${fmtCLP(total)}</td><td></td><td></td><td></td></tr></tfoot></table><button class="btn ghost sm ${addcls}" type="button" style="margin-top:8px">+ Agregar</button></div>`;
@@ -2011,8 +2107,8 @@ function renderInversiones(){
         ${fld("Mes",`<input type="month" class="h-mes" value="${h.mes||""}">`)}
         ${fld("Saldo inicial",`<input type="text" inputmode="numeric" class="h-si num" style="text-align:right" placeholder="$0" value="${h.saldoIni?nfInt.format(h.saldoIni):""}">`)}
         ${fld("Saldo final",`<input type="text" inputmode="numeric" class="h-sf num" style="text-align:right" placeholder="$0" value="${h.saldoFin?nfInt.format(h.saldoFin):""}">`)}
-        ${fld("Aportes del mes",`<input type="text" inputmode="numeric" class="h-ap num" style="text-align:right" placeholder="$0" value="${aportesDetTotal(h)?nfInt.format(aportesDetTotal(h)):""}" disabled title="Suma automática del detalle de aportes">`)}
-        ${fld("Retiros del mes",`<input type="text" inputmode="numeric" class="h-re num" style="text-align:right" placeholder="$0" value="${retirosDetTotal(h)?nfInt.format(retirosDetTotal(h)):""}" disabled title="Suma automática del detalle de retiros">`)}
+        ${fld("Aportes del mes",`<input type="text" inputmode="numeric" class="h-ap num" style="text-align:right" placeholder="$0" value="${mv.ap?nfInt.format(mv.ap):""}" ${mv.apDeDetalle?'disabled title="Suma automática del detalle de aportes"':'title="Total heredado de la planilla (sin detalle cargado). Editable."'}>`)}
+        ${fld("Retiros del mes",`<input type="text" inputmode="numeric" class="h-re num" style="text-align:right" placeholder="$0" value="${mv.re?nfInt.format(mv.re):""}" ${mv.reDeDetalle?'disabled title="Suma automática del detalle de retiros"':'title="Total heredado de la planilla (sin detalle cargado). Editable."'}>`)}
         ${fld("V. cuota inicio",`<input type="text" class="h-cuotaI num" style="text-align:right" placeholder="—" value="${h.cuotaIni!=null?String(h.cuotaIni):""}">`)}
         ${fld("V. cuota fin",`<input type="text" class="h-cuotaF num" style="text-align:right" placeholder="—" value="${h.cuotaFin!=null?String(h.cuotaFin):""}">`)}
         ${fld("N° cuotas inicio",`<input type="text" class="h-nCuotaI num" style="text-align:right" placeholder="—" value="${h.nCuotaI!=null?String(h.nCuotaI):""}" title="Número de cuotas/unidades al inicio del mes">`)}
@@ -2054,7 +2150,7 @@ function renderInversiones(){
     pr.querySelector(".h-serie").addEventListener("change",e=>{ h.serie=e.target.value; refreshCalc(id); });
     pr.querySelector(".h-mes").addEventListener("change",e=>{ h.mes=e.target.value; refreshCalc(id); });
     const money=(sel,prop)=>{ const el=pr.querySelector(sel); if(el&&!el.disabled) el.addEventListener("input",ev=>{ h[prop]=String(ev.target.value).trim()===""?"":parseMiles(ev.target.value); ev.target.value=h[prop]?nfInt.format(h[prop]):""; refreshCalc(id); }); };
-    money(".h-si","saldoIni"); money(".h-sf","saldoFin");
+    money(".h-si","saldoIni"); money(".h-sf","saldoFin"); money(".h-ap","aportes"); money(".h-re","retiros");
     const autoMonto=()=>{
       const vi=toNum(h.cuotaIni), ni=toNum(h.nCuotaI);
       if(vi>0&&ni>0){ h.saldoIni=Math.round(vi*ni); const si=pr.querySelector(".h-si"); if(si&&document.activeElement!==si) si.value=nfInt.format(h.saldoIni); }
@@ -2086,6 +2182,7 @@ function renderInversiones(){
 /* Actualiza saldo/ganancia/rentab de la fila condensada sin re-render (mantiene foco).
    Si totales=true, también refresca los pies de las sub-tablas del panel. */
 function refreshCalc(id,totales){
+  guardarBorrador();
   const tr=document.querySelector(`#holdBody tr.hold-main[data-id="${id}"]`); if(!tr)return;
   const h=STATE.holdings.find(x=>x.id===id), c=recCalc(h), cells=tr.querySelectorAll("td");
   const gColor=v=>v>=0?"#2E6B52":"#B03A3A";
