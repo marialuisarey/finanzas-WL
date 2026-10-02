@@ -961,11 +961,38 @@ function weightedAvg(pairs){ let sw=0,swv=0; for(const [v,w] of pairs){ if(v===n
 async function fetchJson(url,timeoutMs){
   const ctrl=new AbortController();
   const t=setTimeout(()=>ctrl.abort(),timeoutMs||25000);
+  /* Cada error lleva un `tipo` para poder mostrar la causa real al usuario
+     en vez de un genérico "error de conexión". */
+  const fail=(tipo,msg)=>{ const e=new Error(msg); e.tipo=tipo; return e; };
+  let r;
   try{
-    const r=await fetch(url,{redirect:"follow",signal:ctrl.signal});
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    return await r.json();
+    r=await fetch(url,{redirect:"follow",signal:ctrl.signal});
+  }catch(e){
+    clearTimeout(t);
+    if(e&&e.name==="AbortError") throw fail("timeout","Sin respuesta en "+Math.round((timeoutMs||25000)/1000)+"s");
+    /* TypeError de red: sin internet, o bloqueo CORS (típico cuando el Apps
+       Script redirige al login de Google porque no está publicado con acceso
+       "Cualquiera"). El navegador no distingue ambos casos. */
+    throw fail(navigator.onLine===false?"offline":"red", e&&e.message?e.message:"Fallo de red");
+  }
+  try{
+    if(!r.ok) throw fail("http","HTTP "+r.status);
+    const txt=await r.text();
+    try{ return JSON.parse(txt); }
+    catch(e){ throw fail("nojson","Respuesta no es JSON: "+txt.slice(0,120).replace(/\s+/g," ")); }
   } finally { clearTimeout(t); }
+}
+/* Traduce un error de fetchJson a un mensaje accionable. */
+function mensajeErrorCarga(err){
+  const base="No se pudieron cargar los datos de fondos. ";
+  switch(err&&err.tipo){
+    case "offline": return base+"No hay conexión a internet.";
+    case "timeout": return base+"El Apps Script no respondió a tiempo (puede estar lento o saturado). Reintenta en unos segundos.";
+    case "http":    return base+"El Apps Script respondió con error ("+err.message+"). Revisa que la implementación siga activa.";
+    case "nojson":  return base+"El Apps Script devolvió una página en vez de datos: probablemente falló el script (revisa Ejecuciones en Apps Script) o la implementación cambió de URL.";
+    case "red":     return base+"El navegador bloqueó la respuesta. Suele pasar si el Apps Script no está implementado con acceso \"Cualquiera\" o si la URL de implementación cambió. También puede ser una extensión o red corporativa que bloquea script.google.com.";
+    default:        return base+(err&&err.message?err.message:"Error desconocido.");
+  }
 }
 function normalizeFondos(json){
   const datos=Array.isArray(json)?json:(json.datos||json.data||[]);
@@ -999,7 +1026,15 @@ async function fetchMacroMindicador(){
 async function loadAll(){
   setStatus("loading"); hideError();
   try{
-    const fondosJson = await fetchJson(conToken(withBust(FONDOS_URL)), 30000);
+    /* Un reintento automático: el Apps Script a veces falla o tarda en la
+       primera llamada ("arranque en frío"). */
+    let fondosJson;
+    try{ fondosJson = await fetchJson(conToken(withBust(FONDOS_URL)), 30000); }
+    catch(e){
+      if(e.tipo==="offline") throw e;
+      await new Promise(r=>setTimeout(r,1500));
+      fondosJson = await fetchJson(conToken(withBust(FONDOS_URL)), 45000);
+    }
     if(fondosJson && fondosJson.ok===false){ mostrarLogin("Tu sesión expiró. Iniciá sesión de nuevo."); return; }
     STATE.fondos = normalizeFondos(fondosJson);
     STATE.fondosMeta = { actualizado:fondosJson.actualizado||null, total:fondosJson.total!=null?fondosJson.total:STATE.fondos.length, hoja:fondosJson.hoja||"" };
@@ -1022,7 +1057,7 @@ async function loadAll(){
   }catch(err){
     console.error("Error cargando fondos:",err);
     STATE.loaded=false; setStatus("error");
-    showError("Error de conexión al cargar los datos de fondos. Verifica tu conexión y reintenta.");
+    showError(mensajeErrorCarga(err));
     STATE.macro=MACRO_FALLBACK; STATE.macroSource="fallback"; renderMacro();
     renderBlockingEmpty();
   }
